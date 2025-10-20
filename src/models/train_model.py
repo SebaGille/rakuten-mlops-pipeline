@@ -3,7 +3,6 @@ from pathlib import Path
 
 import joblib
 import mlflow
-import mlflow.sklearn
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -81,19 +80,13 @@ def main():
         with open(METRICS_FILE, "w") as f:
             json.dump({"accuracy": acc, "f1_weighted": f1}, f, indent=2)
 
-        # Log model to MLflow registry/artifacts
-        mlflow.sklearn.log_model(
-            sk_model=model,
-            artifact_path="model",
-            input_example=X_train.iloc[:3].tolist(),
-            registered_model_name=None  # we'll register in Phase 3
-        )
-        # Log the vectorizer as a separate artifact
+        # Log artifacts to MLflow (server-compatible approach)
+        mlflow.log_artifact(str(MODEL_FILE))  # baseline_model.pkl
+
         joblib.dump(vectorizer, "vectorizer.joblib")
         mlflow.log_artifact("vectorizer.joblib")
         Path("vectorizer.joblib").unlink(missing_ok=True)
 
-        # Also log local metrics file as an artifact for convenience
         mlflow.log_artifact(str(METRICS_FILE))
 
         print(f"Saved model → {MODEL_FILE}")

@@ -1,0 +1,10 @@
+artifact_location: file:///Users/sebastien/Documents/DataScientest/sep25_cmlops_rakuten/mlruns/436442176606361991/models/m-7ebbb4a66e7e40328dade78ec080960a/artifacts
+creation_timestamp: 1760986969751
+experiment_id: '436442176606361991'
+last_updated_timestamp: 1760986972698
+model_id: m-7ebbb4a66e7e40328dade78ec080960a
+model_type: null
+name: model
+source_run_id: fe71a5a529e74334abe323478070c935
+status: 2
+status_message: null

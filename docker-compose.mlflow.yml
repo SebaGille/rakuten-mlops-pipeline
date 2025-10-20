@@ -30,15 +30,15 @@ services:
         condition: service_healthy
     environment:
       BACKEND_STORE_URI: postgresql://mlflow:mlflow@postgres:5432/mlflow
-      ARTIFACT_ROOT: /mlflow/artifacts
+      ARTIFACT_ROOT: /home/mlflow/artifacts
     volumes:
-      - ./mlruns:/mlflow/artifacts
+      - ./mlruns:/home/mlflow/artifacts
     ports:
       - "5000:5000"
     command: >
       mlflow server
       --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow
-      --default-artifact-root /mlflow/artifacts
+      --default-artifact-root /home/mlflow/artifacts
       --host 0.0.0.0
 
 volumes:
