@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+
+# System deps for psycopg2
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential gcc libpq-dev curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Python deps: MLflow + Postgres driver
+RUN pip install --no-cache-dir mlflow==2.14.2 psycopg2-binary==2.9.9 gunicorn
+
+# Create a non-root user (optional but good practice)
+RUN useradd -m mlflow
+USER mlflow
+WORKDIR /home/mlflow
+
+# Default workdir will host artifacts mount
