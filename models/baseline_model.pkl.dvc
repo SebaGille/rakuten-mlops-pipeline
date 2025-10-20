@@ -1,0 +1,5 @@
+outs:
+- md5: 4e10f70d41fdd890ece2a46f21bf6f64
+  size: 5106805
+  hash: md5
+  path: baseline_model.pkl
