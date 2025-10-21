@@ -1,0 +1,47 @@
+schema: '2.0'
+stages:
+  ingest:
+    cmd: python src/data/make_dataset.py
+    deps:
+    - path: data/raw/X_test.csv
+      hash: md5
+      md5: d52ec4a79f8f01da099bd3bca4c619d1
+      size: 8818548
+    - path: data/raw/X_train.csv
+      hash: md5
+      md5: c936389910c88bb29bf2c438af3476df
+      size: 54129120
+    - path: data/raw/Y_train.csv
+      hash: md5
+      md5: 52d45c998ddc0c10f05987bb233ff5e7
+      size: 906705
+    - path: data/raw/images/image_train
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+    - path: src/data/make_dataset.py
+      hash: md5
+      md5: 2602fba43696b1f165dafdac55812586
+      size: 2458
+    outs:
+    - path: data/interim/merged_train.csv
+      hash: md5
+      md5: 8f6282b42301ffdf414af840d5817ceb
+      size: 54537448
+  features:
+    cmd: python src/features/build_features.py
+    deps:
+    - path: data/interim/merged_train.csv
+      hash: md5
+      md5: 8f6282b42301ffdf414af840d5817ceb
+      size: 54537448
+    - path: src/features/build_features.py
+      hash: md5
+      md5: f2c0ea8157be2cacb0ffc816bdc60496
+      size: 1677
+    outs:
+    - path: data/processed/train_features.csv
+      hash: md5
+      md5: 12dd3dcc5f477fcbbba479334bd21877
+      size: 51021808

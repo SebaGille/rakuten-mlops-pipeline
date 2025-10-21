@@ -1,0 +1,34 @@
+stages:
+  ingest:
+    cmd: python src/data/make_dataset.py
+    deps:
+    - data/raw/X_test.csv
+    - data/raw/X_train.csv
+    - data/raw/Y_train.csv
+    - data/raw/images/image_train
+    - src/data/make_dataset.py
+    outs:
+    - data/interim/merged_train.csv
+  features:
+    cmd: python src/features/build_features.py
+    deps:
+    - data/interim/merged_train.csv
+    - src/features/build_features.py
+    outs:
+    - data/processed/train_features.csv
+  train:
+    cmd: python src/models/train_model.py
+    deps:
+    - data/processed/train_features.csv
+    - src/models/train_model.py
+    outs:
+    - models/baseline_model.pkl
+    - models/metrics.json
+  predict:
+    cmd: python src/models/predict_model.py
+    deps:
+    - data/raw/X_test.csv
+    - models/baseline_model.pkl
+    - src/models/predict_model.py
+    outs:
+    - data/processed/predictions.csv
