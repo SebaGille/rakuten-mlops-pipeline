@@ -1,0 +1,14 @@
+artifact_uri: file:///Users/sebastien/Documents/DataScientest/sep25_cmlops_rakuten/mlruns/436442176606361991/626e486fce53426b9f34894e8cb5386b/artifacts
+end_time: 1760990044172
+entry_point_name: ''
+experiment_id: '436442176606361991'
+lifecycle_stage: active
+run_id: 626e486fce53426b9f34894e8cb5386b
+run_name: baseline-logreg-tfidf
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1760990017576
+status: 3
+tags: []
+user_id: sebastien
