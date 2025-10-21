@@ -5,8 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gcc libpq-dev curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Python deps: MLflow + Postgres driver
-RUN pip install --no-cache-dir mlflow==2.14.2 psycopg2-binary==2.9.9 gunicorn
+# Python deps: MLflow + Postgres driver + S3 support
+RUN pip install --no-cache-dir mlflow==2.14.2 psycopg2-binary==2.9.9 gunicorn boto3
 
 # Create a non-root user (optional but good practice)
 RUN useradd -m mlflow

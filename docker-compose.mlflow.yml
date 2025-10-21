@@ -30,15 +30,16 @@ services:
         condition: service_healthy
     environment:
       BACKEND_STORE_URI: postgresql://mlflow:mlflow@postgres:5432/mlflow
-      ARTIFACT_ROOT: /home/mlflow/artifacts
-    volumes:
-      - ./mlruns:/home/mlflow/artifacts
+      # S3 Configuration
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
     ports:
       - "5000:5000"
     command: >
       mlflow server
       --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow
-      --default-artifact-root /home/mlflow/artifacts
+      --default-artifact-root s3://${S3_BUCKET_NAME}/mlflow-artifacts
       --host 0.0.0.0
 
 volumes:

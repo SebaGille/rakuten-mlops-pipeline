@@ -1,0 +1,120 @@
+graph TB
+    %% Data Sources Layer
+    subgraph "Data Sources"
+        CSV1[X_train.csv]
+        CSV2[Y_train.csv] 
+        CSV3[X_test.csv]
+        IMG[Images Directory]
+        DAGSHUB[DAGsHub Remote<br/>https://dagshub.com/SebaGille/rakuten-mlops.dvc]
+    end
+
+    %% Local Data Processing
+    subgraph "Local Data Processing"
+        DVC[DVC Tracking<br/>.dvc files]
+        RAW[data/raw/]
+        INTERIM[data/interim/<br/>merged_train.csv]
+        PROCESSED[data/processed/<br/>train_features.csv]
+    end
+
+    %% ML Pipeline
+    subgraph "ML Pipeline"
+        LOAD[make_dataset.py<br/>Data Loading & Merging]
+        FEATURES[build_features.py<br/>Text Cleaning & Feature Engineering]
+        TRAIN[train_model.py<br/>TF-IDF + Logistic Regression]
+        PREDICT[predict_model.py<br/>Model Inference]
+    end
+
+    %% Model Storage
+    subgraph "Model Storage"
+        MODEL[baseline_model.pkl<br/>Model + Vectorizer]
+        METRICS[metrics.json<br/>Performance Metrics]
+        PREDICTIONS[predictions.csv<br/>Test Predictions]
+    end
+
+    %% MLflow Infrastructure
+    subgraph "MLflow Infrastructure"
+        POSTGRES[(PostgreSQL<br/>Port 5432<br/>MLflow Metadata)]
+        MLFLOW[MLflow Server<br/>Port 5000<br/>Experiment Tracking]
+        EXP[Experiment:<br/>rakuten-baseline-s3]
+    end
+
+    %% Docker Infrastructure
+    subgraph "Docker Infrastructure"
+        DOCKERFILE[Dockerfile.mlflow<br/>Python 3.11 + MLflow 2.14.2]
+        COMPOSE[docker-compose.mlflow.yml<br/>Multi-service Orchestration]
+        ENV[.env file<br/>AWS Credentials]
+    end
+
+    %% Cloud Storage
+    subgraph "Cloud Storage"
+        S3[AWS S3 Bucket<br/>MLflow Artifacts]
+        AWS[AWS Credentials<br/>Access Keys & Region]
+    end
+
+    %% Version Control
+    subgraph "Version Control"
+        GIT[Git Repository<br/>Source Code]
+        DVC_REMOTE[DVC Remote<br/>Data Versioning]
+    end
+
+    %% Data Flow Connections
+    CSV1 --> LOAD
+    CSV2 --> LOAD
+    CSV3 --> PREDICT
+    IMG --> RAW
+    LOAD --> INTERIM
+    INTERIM --> FEATURES
+    FEATURES --> PROCESSED
+    PROCESSED --> TRAIN
+    TRAIN --> MODEL
+    TRAIN --> METRICS
+    MODEL --> PREDICT
+    PREDICT --> PREDICTIONS
+
+    %% DVC Connections
+    RAW -.-> DVC
+    INTERIM -.-> DVC
+    PROCESSED -.-> DVC
+    MODEL -.-> DVC
+    METRICS -.-> DVC
+    DVC -.-> DVC_REMOTE
+    DVC_REMOTE -.-> DAGSHUB
+
+    %% MLflow Connections
+    TRAIN --> MLFLOW
+    MLFLOW --> POSTGRES
+    MLFLOW --> S3
+    MLFLOW --> EXP
+    MODEL -.-> MLFLOW
+    METRICS -.-> MLFLOW
+
+    %% Docker Connections
+    COMPOSE --> POSTGRES
+    COMPOSE --> MLFLOW
+    DOCKERFILE --> MLFLOW
+    ENV --> COMPOSE
+    ENV --> MLFLOW
+
+    %% Cloud Connections
+    MLFLOW --> S3
+    ENV --> AWS
+    AWS --> S3
+
+    %% Version Control Connections
+    GIT -.-> DVC
+    DVC_REMOTE -.-> S3
+
+    %% Styling
+    classDef dataSource fill:#e1f5fe
+    classDef processing fill:#f3e5f5
+    classDef ml fill:#e8f5e8
+    classDef storage fill:#fff3e0
+    classDef infrastructure fill:#fce4ec
+    classDef cloud fill:#e0f2f1
+
+    class CSV1,CSV2,CSV3,IMG,DAGSHUB dataSource
+    class LOAD,FEATURES,TRAIN,PREDICT processing
+    class MODEL,METRICS,PREDICTIONS ml
+    class RAW,INTERIM,PROCESSED,DVC storage
+    class POSTGRES,MLFLOW,EXP,DOCKERFILE,COMPOSE,ENV infrastructure
+    class S3,AWS cloud
