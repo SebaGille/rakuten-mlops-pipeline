@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import subprocess
 
 import boto3
 import joblib
@@ -28,6 +29,16 @@ INPUT_FILE = DATA_PROCESSED / "train_features.csv"
 MODEL_FILE = MODELS_DIR / "baseline_model.pkl"
 EXPERIMENT_NAME = "rakuten-baseline-s3"
 MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
+
+
+def _git(cmd: list[str]) -> str:
+    try:
+        return subprocess.check_output(cmd, cwd=PROJECT_ROOT).decode().strip()
+    except Exception:
+        return "unknown"
+
+git_commit = _git(["git", "rev-parse", "--short", "HEAD"])
+git_branch = _git(["git", "rev-parse", "--abbrev-ref", "HEAD"])
 
 
 def main():
@@ -73,6 +84,18 @@ def main():
                 **model_params,
             }
         )
+        # Lier le run au contexte de version
+        mlflow.set_tags({
+            "git_commit": git_commit,
+            "git_branch": git_branch,
+            "dvc_repo_rev": git_commit,   
+            "pipeline_stages": "ingest→features→train"
+        })
+
+        # Joindre les manifests DVC/Git de la run
+        mlflow.log_artifact(str(PROJECT_ROOT / "dvc.yaml"))
+        if (PROJECT_ROOT / "dvc.lock").exists():
+            mlflow.log_artifact(str(PROJECT_ROOT / "dvc.lock"))
 
         print("Vectorizing text...")
         vectorizer = TfidfVectorizer(

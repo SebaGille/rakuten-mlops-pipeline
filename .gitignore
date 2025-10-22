@@ -95,3 +95,8 @@ target/
 # Mypy cache
 .mypy_cache/
 .env
+
+# Virtual environment
+.venv/
+venv/
+.python-version
