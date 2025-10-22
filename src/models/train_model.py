@@ -6,11 +6,13 @@ import subprocess
 import boto3
 import joblib
 import mlflow
+import mlflow.sklearn
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 
 
 # --- Paths & Config ---
@@ -123,9 +125,59 @@ def main():
         # Log metrics
         mlflow.log_metrics({"accuracy": acc, "f1_weighted": f1})
 
+        # --- Create Pipeline for MLflow Model Registry ---
+        print("Creating pipeline (vectorizer + model)...")
+        pipeline = Pipeline([
+            ('vectorizer', vectorizer),
+            ('classifier', model)
+        ])
+
+        # --- Log model to MLflow ---
+        print("Logging model to MLflow...")
+        
+        # Log the sklearn pipeline
+        model_info = mlflow.sklearn.log_model(
+            sk_model=pipeline,
+            artifact_path="model",
+            input_example=["sample designation sample description"]
+        )
+        
+        # --- Register model in MLflow Model Registry (manual registration) ---
+        print("Registering model in MLflow Model Registry...")
+        try:
+            client = mlflow.tracking.MlflowClient()
+            model_uri = f"runs:/{mlflow.active_run().info.run_id}/model"
+            
+            # Register the model
+            result = client.create_registered_model("rakuten-baseline")
+            print(f"Created registered model: {result.name}")
+        except Exception as e:
+            # Model already exists, continue
+            print(f"Model already registered (this is normal): {e}")
+        
+        # Create a new model version
+        try:
+            model_version = client.create_model_version(
+                name="rakuten-baseline",
+                source=model_uri,
+                run_id=mlflow.active_run().info.run_id
+            )
+            print(f"Created model version {model_version.version}")
+            
+            # Optional: automatically promote to Production
+            client.transition_model_version_stage(
+                name="rakuten-baseline",
+                version=model_version.version,
+                stage="Production",
+                archive_existing_versions=True
+            )
+            print(f"Promoted model version {model_version.version} to Production.")
+        except Exception as e:
+            print(f"Model version creation or promotion failed: {e}")
+
         # Save local artifacts
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        joblib.dump({"model": model, "vectorizer": vectorizer}, MODEL_FILE)
+        joblib.dump({"pipeline": pipeline, "model": model, "vectorizer": vectorizer}, MODEL_FILE)
         with open(METRICS_FILE, "w") as f:
             json.dump({"accuracy": acc, "f1_weighted": f1}, f, indent=2)
 

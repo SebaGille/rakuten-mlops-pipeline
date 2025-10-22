@@ -1,6 +1,7 @@
 from prefect import flow, task
 from pathlib import Path
 import sys
+import subprocess
 
 # Add project root to Python path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -29,13 +30,25 @@ def train():
 def predict():
     predict_model_main()
 
-@flow(name="rakuten_pipeline_local")
-def rakuten_pipeline(run_predict: bool = True):
+@task(retries=0)
+def sync_to_dvc():
+    try:
+        print("Pushing artifacts to DVC remote...")
+        subprocess.run(["dvc", "push"], check=True)
+        print("DVC artifacts pushed successfully.")
+    except Exception as e:
+        print(f"DVC push failed: {e}")
+
+@flow(name="rakuten_pipeline")
+def rakuten_pipeline(run_predict: bool = True, sync_dvc: bool = False):
     ingest()
     build_features()
     train()
     if run_predict:
         predict()
+    if sync_dvc:
+        sync_to_dvc()
+
 
 if __name__ == "__main__":
     rakuten_pipeline()
