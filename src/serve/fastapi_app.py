@@ -1,3 +1,7 @@
+"""
+Rakuten Product Classification API
+Python 3.11+ compatible
+"""
 import os
 import mlflow
 import pandas as pd
