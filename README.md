@@ -5,10 +5,10 @@ Projet de pipeline MLOps complet pour la classification des produits Rakuten (te
 ## 🔧 Stack (progressive)
 - **Python 3.11** (venv) — ⚠️ Requis pour Prefect
 - **DVC** + **Dagshub** (versioning data/modèles)
-- **MLflow** + **PostgreSQL** (Docker) — suivi d'expériences
+- **MLflow** + **PostgreSQL** + **FastAPI** (Docker) — suivi d'expériences & serving
 - **Artifacts MLflow**: S3 (via variables d'environnement)
 - **Prefect** (orchestration) — installé
-- **À venir** : FastAPI (serving), CI/CD GitHub Actions, Prometheus/Grafana, Evidently
+- **À venir** : CI/CD GitHub Actions, Prometheus/Grafana, Evidently
 
 ## 📦 Données
 ```
@@ -50,52 +50,94 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2) Variables d’environnement (S3 / MLflow)
+### 2) Variables d'environnement (S3 / MLflow)
 
-Créer un fichier `.env` (non commité) :
+⚠️ **IMPORTANT** : Créer un fichier `.env` à la racine du projet (non commité, déjà dans `.gitignore`) :
 
-```
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
+```bash
+# AWS S3 Configuration for MLflow
+AWS_ACCESS_KEY_ID=your_access_key_here
+AWS_SECRET_ACCESS_KEY=your_secret_key_here
 AWS_DEFAULT_REGION=eu-west-1
-# Optionnel si S3 compatible (MinIO, etc.)
-# MLFLOW_S3_ENDPOINT_URL=https://s3.amazonaws.com
-
-# Pour pointer localement (sinon défini dans le script)
-MLFLOW_TRACKING_URI=http://127.0.0.1:5000
-MLFLOW_EXPERIMENT_NAME=rakuten-baseline
+S3_BUCKET_NAME=your-bucket-name
 ```
 
-Charger dans la session :
+Docker Compose charge automatiquement ce `.env` pour les containers.
+
+### 3) Lancer les services Docker (MLflow + PostgreSQL + API)
 
 ```bash
-set -a; source .env; set +a
+# Démarre tous les services (mlflow, postgres, rakuten_api)
+docker-compose -f docker-compose.api.yml up -d
+
+# Vérifier que tout tourne
+docker ps
+
+# UI MLflow: http://localhost:5000
+# API Rakuten: http://localhost:8000
+# API Docs: http://localhost:8000/docs
 ```
 
-### 3) Lancer MLflow (Docker)
-
+**Arrêter tous les containers** :
 ```bash
-docker compose -f docker-compose.mlflow.yml up -d
-# UI: http://127.0.0.1:5000
+docker-compose -f docker-compose.api.yml down
 ```
 
-### 4) Pipeline DVC (reproductible)
+**Redémarrer après modification** :
+```bash
+docker-compose -f docker-compose.api.yml down
+docker-compose -f docker-compose.api.yml up --build -d
+```
+
+### 4) Exécuter le Pipeline (Prefect)
+
+⚠️ **CRITIQUE** : Pour que les artifacts MLflow soient sauvegardés sur S3 (et non localement), **vous DEVEZ charger les variables d'environnement** avant d'exécuter le pipeline :
 
 ```bash
-# exécute ingest → features → train → predict
+# Activer l'environnement virtuel
+source .venv/bin/activate
+
+# ⚠️ IMPORTANT: Charger les variables AWS depuis .env
+export $(cat .env | grep -v '^#' | xargs)
+
+# Définir l'URI de MLflow
+export MLFLOW_TRACKING_URI=http://localhost:5000
+
+# Lancer le pipeline complet (ingest → features → train → predict)
+python flows/pipeline_flow.py
+```
+
+**Commande complète en une ligne** :
+```bash
+source .venv/bin/activate && export $(cat .env | grep -v '^#' | xargs) && export MLFLOW_TRACKING_URI=http://localhost:5000 && python flows/pipeline_flow.py
+```
+
+### 5) Pipeline DVC (alternative reproductible)
+
+```bash
+# Charger les variables d'environnement
+export $(cat .env | grep -v '^#' | xargs)
+
+# Exécute ingest → features → train → predict
 dvc repro
-# pousse les artefacts (data/modèles) vers le remote DVC (Dagshub)
+
+# Pousse les artefacts (data/modèles) vers le remote DVC (Dagshub)
 dvc push
 ```
 
-### 5) Scripts unitaires
+### 6) Scripts unitaires
 
 ```bash
-# build features
+# Charger .env d'abord
+export $(cat .env | grep -v '^#' | xargs)
+
+# Build features
 python src/features/build_features.py
-# entraînement (log MLflow + artefacts S3)
+
+# Entraînement (log MLflow + artefacts S3)
 python src/models/train_model.py
-# prédictions sur X_test
+
+# Prédictions sur X_test
 python src/models/predict_model.py
 ```
 
@@ -108,10 +150,29 @@ python src/models/predict_model.py
 
 ## 🆘 Dépannage rapide
 
-* **S3 auth fail** : vérifier `.env` chargé dans le shell (`set -a; source .env; set +a`) et droits IAM.
-* **MLflow artifacts en erreur** : vérifier que le compose utilise `/home/mlflow/artifacts` et que le dossier local `./mlruns` existe.
-* **DVC “tracked by SCM”** : retirer du suivi Git (`git rm -r --cached <fichier>`) avant de déclarer en output DVC.
-* **Images manquantes** : le chemin attendu est `data/raw/images/image_train/` avec le motif `image_<imageid>_product_<productid>.jpg`.
+* **Erreur `OSError: [Errno 30] Read-only file system: '/mlflow'`** : 
+  - ⚠️ **Vous avez oublié de charger les variables d'environnement !**
+  - Solution : `export $(cat .env | grep -v '^#' | xargs)` avant d'exécuter le pipeline
+  - Les artifacts MLflow doivent aller sur S3, pas en local
+
+* **S3 auth fail / Access Denied** : 
+  - Vérifier que `.env` est bien chargé dans le shell : `echo $AWS_ACCESS_KEY_ID`
+  - Vérifier les droits IAM sur le bucket S3
+  - Vérifier que `S3_BUCKET_NAME` est bien défini
+
+* **MLflow experiment with local artifact path** :
+  - L'expérience a été créée avant que S3 soit configuré
+  - Solution : recréer l'expérience ou redémarrer les containers Docker
+
+* **DVC "tracked by SCM"** : 
+  - Retirer du suivi Git (`git rm -r --cached <fichier>`) avant de déclarer en output DVC
+
+* **Images manquantes** : 
+  - Le chemin attendu est `data/raw/images/image_train/` avec le motif `image_<imageid>_product_<productid>.jpg`
+
+* **Docker containers not starting** :
+  - Vérifier que le fichier `.env` existe à la racine
+  - Vérifier les logs : `docker logs sep25_cmlops_rakuten-mlflow-1`
 
 ## 📌 Licence
 

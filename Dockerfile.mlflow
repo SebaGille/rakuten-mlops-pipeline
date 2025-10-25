@@ -1,16 +1,8 @@
-FROM python:3.11-slim
+FROM ghcr.io/mlflow/mlflow:v3.5.0
 
-# System deps for psycopg2
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential gcc libpq-dev curl && \
-    rm -rf /var/lib/apt/lists/*
+# Install PostgreSQL client library and AWS S3 support
+USER root
+RUN pip install --no-cache-dir psycopg2-binary boto3
 
-# Python deps: MLflow + Postgres driver + S3 support
-RUN pip install --no-cache-dir mlflow==3.5.0 psycopg2-binary==2.9.9 gunicorn boto3
-
-# Create a non-root user (optional but good practice)
-RUN useradd -m mlflow
-USER mlflow
-WORKDIR /home/mlflow
-
-# Default workdir will host artifacts mount
+# Switch back to default user if needed
+USER 1000

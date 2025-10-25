@@ -29,7 +29,7 @@ MODELS_DIR = PROJECT_ROOT / "models"
 METRICS_FILE = MODELS_DIR / "metrics.json"
 INPUT_FILE = DATA_PROCESSED / "train_features.csv"
 MODEL_FILE = MODELS_DIR / "baseline_model.pkl"
-EXPERIMENT_NAME = "rakuten-baseline-s3"
+EXPERIMENT_NAME = "rakuten-baseline-S3-MLflow"
 MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
 
 
