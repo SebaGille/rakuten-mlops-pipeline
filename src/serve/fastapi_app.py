@@ -7,11 +7,16 @@ import mlflow
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from pathlib import Path
+from datetime import datetime
 
 # --- Configuration ---
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
 MODEL_NAME = os.getenv("MODEL_NAME", "rakuten-baseline")
 MODEL_STAGE = os.getenv("MODEL_STAGE", "Production")
+LOG_DIR = Path(os.getenv("INFERENCE_LOG_DIR", "data/monitoring"))
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+INFERENCE_LOG = LOG_DIR / "inference_log.csv"
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
@@ -79,9 +84,30 @@ def predict(product: ProductInput):
     model = load_production_model()
     
     # Prepare input dataframe
-    text = f"{product.designation or ''} {product.description or ''}"
+    text = f"{product.designation or ''} {product.description or ''}".strip()
     df = pd.DataFrame({"text": [text]})
 
     # Predict
     prediction = model.predict(df)
-    return {"predicted_prdtypecode": int(prediction[0])}
+    pred = int(prediction[0])
+
+    # --- append inference log (CSV append-only) ---
+    print(f"[DEBUG] About to log prediction. INFERENCE_LOG={INFERENCE_LOG}")
+    try:
+        row = pd.DataFrame([{
+            "timestamp": datetime.utcnow().isoformat(),
+            "text_len": len(text),
+            "designation": product.designation,
+            "description": product.description,
+            "predicted_prdtypecode": pred,
+        }])
+        # write header only if file does not exist
+        header = not INFERENCE_LOG.exists()
+        print(f"[DEBUG] File exists: {INFERENCE_LOG.exists()}, header: {header}")
+        row.to_csv(INFERENCE_LOG, mode="a", header=header, index=False)
+        print(f"[DEBUG] Successfully wrote to log")
+    except Exception as e:
+        # soft-fail logging (n'interrompt pas la prédiction)
+        print(f"[warn] failed to append inference log: {e}")
+
+    return {"predicted_prdtypecode": pred}
