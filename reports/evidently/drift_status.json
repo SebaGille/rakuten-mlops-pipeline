@@ -1,0 +1,14 @@
+{
+  "drift_share": 1.0,
+  "drift_threshold": 0.3,
+  "drifted_columns": 2.0,
+  "monitored_columns": [
+    "text_len",
+    "prdtypecode"
+  ],
+  "column_values": {
+    "text_len": 0.700430072413243,
+    "prdtypecode": 0.6026338628945787
+  },
+  "trigger_retrain": true
+}

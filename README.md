@@ -166,6 +166,32 @@ python src/monitoring/generate_evidently.py
 # View report: reports/evidently/evidently_report.html
 ```
 
+### 8) Prefect Deployment & Scheduling
+
+```bash
+# Activate the project virtual environment and load environment variables
+source .venv/bin/activate
+export $(cat .env | grep -v '^#' | xargs)
+
+# Register or update Prefect deployments defined in prefect.yaml
+prefect deploy
+
+# Start (or restart) the worker that listens to the process work pool
+prefect worker start --pool "monitor-process-pool"
+
+# (Optional) Trigger an immediate run without waiting for the cron schedule
+prefect deployment run "monitor-and-retrain/monitor-and-retrain-daily"
+
+# Inspect registered deployments
+prefect deployment ls
+```
+
+Notes:
+- The deployment configuration now lives in `prefect.yaml`; the legacy
+  `prefect deployment build/apply` workflow is no longer used.
+- The worker command is long-running—run it in a dedicated terminal
+  (or background service) so scheduled runs at `0 9 * * *` can execute.
+
 ## 🧭 Best Practices & Traceability
 
 * **MLflow**: Each run logs parameters, metrics, and artifacts (model, vectorizer, metrics.json).

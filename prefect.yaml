@@ -1,0 +1,19 @@
+name: sep25_cmlops_rakuten
+prefect-version: "2.14.10"
+pull: null
+
+deployments:
+  - name: monitor-and-retrain-daily
+    description: Run drift monitoring and optionally retrain when the threshold is exceeded.
+    entrypoint: flows/monitor_and_retrain.py:monitor_and_retrain
+    parameters:
+      trigger_on_parse_error: true
+    schedules:
+      - cron: "0 9 * * *"
+        timezone: "UTC"
+    tags: []
+    work_pool:
+      name: monitor-process-pool
+      work_queue_name: default
+      job_variables: {}
+
