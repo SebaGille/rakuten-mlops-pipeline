@@ -2,7 +2,7 @@ name: Build & Push Rakuten API
 
 on:
   push:
-    branches: [ master, feat/** ]
+    branches: [ master, Dev, feat/** ]
     paths:
       - "src/serve/**"
       - "Dockerfile.api"

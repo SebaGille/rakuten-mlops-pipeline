@@ -10,7 +10,8 @@ A complete MLOps pipeline for Rakuten product classification (text + images) wit
 - **MLflow** + **PostgreSQL** + **FastAPI** (Docker) — experiment tracking & serving
 - **MLflow Artifacts**: AWS S3 (via environment variables)
 - **Prefect** (orchestration) — installed
-- **Coming soon**: CI/CD GitHub Actions, Prometheus/Grafana, Evidently
+- **Prometheus** + **Grafana** + **Evidently** (monitoring & drift detection) — ✅ implemented
+- **CI/CD**: GitHub Actions — ✅ implemented
 
 ## 📦 Data Structure
 ```
@@ -141,12 +142,36 @@ python src/models/train_model.py
 python src/models/predict_model.py
 ```
 
+### 7) Monitoring Stack (Prometheus + Grafana + Evidently)
+
+**Start monitoring services**:
+```bash
+docker-compose -f docker-compose.monitor.yml up -d
+
+# Access dashboards
+# Prometheus: http://localhost:9090
+# Grafana: http://localhost:3000 (admin/admin)
+```
+
+**Generate Evidently drift report**:
+```bash
+# Make some predictions first to populate inference log
+curl -X POST "http://localhost:8000/predict" \
+  -H "Content-Type: application/json" \
+  -d '{"designation": "Product name", "description": "Product description"}'
+
+# Generate drift report
+python src/monitoring/generate_evidently.py
+
+# View report: reports/evidently/evidently_report.html
+```
+
 ## 🧭 Best Practices & Traceability
 
 * **MLflow**: Each run logs parameters, metrics, and artifacts (model, vectorizer, metrics.json).
   Tags link the run to the **Git commit** (`git_commit`, `git_branch`) and the run includes `dvc.yaml`/`dvc.lock`.
 * **DVC**: Manages pipeline outputs (`data/interim`, `data/processed`, `models/*`) and syncs to Dagshub.
-* **Branches**: Work on feature branches (e.g., `feat/seba/bootstrap`) then PR to `main`.
+* **Branches**: Work on feature branches (e.g., `Dev`) then PR to `main`.
 
 ## 🆘 Troubleshooting
 
@@ -170,6 +195,12 @@ python src/models/predict_model.py
   - Verify that `.env` file exists at project root
   - Check logs: `docker logs sep25_cmlops_rakuten-mlflow-1`
 
+* **All predictions returning the same class (e.g., class 10)**:
+  - ✅ **FIXED**: This was caused by passing a DataFrame to the model instead of raw text
+  - The sklearn Pipeline expects a list/array of strings, not a DataFrame
+  - Solution: Pass `model.predict([text])` instead of `model.predict(pd.DataFrame({"text": [text]}))`
+  - After fix, restart API: `docker-compose -f docker-compose.api.yml up --build -d`
+
 ## 👨‍💻 About This Project
 
 **Skills Demonstrated**:
@@ -179,7 +210,11 @@ python src/models/predict_model.py
 - ✅ Model serving API with FastAPI
 - ✅ Containerization with Docker & Docker Compose
 - ✅ Artifact storage on AWS S3
+- ✅ Monitoring with Prometheus + Grafana (metrics, dashboards)
+- ✅ Data drift detection with Evidently
+- ✅ CI/CD with GitHub Actions (tests, deployment)
 - ✅ Git best practices (branches, tags, atomic commits)
+- ✅ Debugging & troubleshooting production issues
 
 **Author**: Sébastien
 

@@ -9,6 +9,10 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from pathlib import Path
 from datetime import datetime
+import time
+from fastapi.responses import Response
+from prometheus_client import Counter, Histogram, CONTENT_TYPE_LATEST, generate_latest
+
 
 # --- Configuration ---
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
@@ -17,6 +21,12 @@ MODEL_STAGE = os.getenv("MODEL_STAGE", "Production")
 LOG_DIR = Path(os.getenv("INFERENCE_LOG_DIR", "data/monitoring"))
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 INFERENCE_LOG = LOG_DIR / "inference_log.csv"
+
+# --- Prometheus metrics ---
+PREDICTION_COUNTER = Counter("rakuten_predictions_total", "Total predictions by class", ["prdtypecode"])
+PREDICTION_LATENCY = Histogram("rakuten_prediction_latency_seconds", "Prediction latency (seconds)")
+TEXT_LEN_HIST = Histogram("rakuten_text_len_chars", "Length of input text (characters)")
+
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
@@ -77,19 +87,36 @@ def health():
             "message": "Model not available. Please register and deploy a model first."
         }
 
+@app.get("/metrics")
+def metrics():
+    """Prometheus metrics endpoint"""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 @app.post("/predict")
 def predict(product: ProductInput):
     """Predict product category from designation and description"""
+    # Start latency measurement
+    start_time = time.time()
+    
     # Load model (will use cache if already loaded)
     model = load_production_model()
     
-    # Prepare input dataframe
+    # Prepare input text (as list of strings for the Pipeline)
     text = f"{product.designation or ''} {product.description or ''}".strip()
-    df = pd.DataFrame({"text": [text]})
+    
+    # Observe text length
+    TEXT_LEN_HIST.observe(len(text))
 
-    # Predict
-    prediction = model.predict(df)
+    # Predict - pass as list of strings (not DataFrame)
+    prediction = model.predict([text])
     pred = int(prediction[0])
+    
+    # Record prediction latency
+    latency = time.time() - start_time
+    PREDICTION_LATENCY.observe(latency)
+    
+    # Count prediction by class
+    PREDICTION_COUNTER.labels(prdtypecode=str(pred)).inc()
 
     # --- append inference log (CSV append-only) ---
     print(f"[DEBUG] About to log prediction. INFERENCE_LOG={INFERENCE_LOG}")

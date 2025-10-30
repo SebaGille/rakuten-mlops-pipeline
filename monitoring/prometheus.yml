@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'rakuten_api'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['rakuten_api:8000']

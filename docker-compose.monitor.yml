@@ -1,0 +1,28 @@
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - default
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_storage:/var/lib/grafana
+    networks:
+      - default
+
+volumes:
+  prometheus_data:
+  grafana_storage:
