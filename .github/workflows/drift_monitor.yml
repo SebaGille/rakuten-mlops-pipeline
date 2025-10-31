@@ -67,6 +67,7 @@ jobs:
         if: steps.drift.outputs.exit_code != '0'
         uses: actions/github-script@v7
         with:
+          status: ${{ steps.status.outputs.status }}
           script: |
             const status = JSON.parse(core.getInput('status'));
             const title = `⚠️ Drift threshold exceeded: retraining recommended`;
@@ -91,5 +92,4 @@ jobs:
               labels: ['drift', 'mlops', 'retrain']
             });
             core.info(`Issue created: #${issue.number}`);
-          with:
-            status: ${{ steps.status.outputs.status }}
+
