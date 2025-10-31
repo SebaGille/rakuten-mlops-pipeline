@@ -100,3 +100,6 @@ target/
 .venv/
 venv/
 .python-version
+
+# MLflow local runs (artifacts should be on S3)
+mlruns/

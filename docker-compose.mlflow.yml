@@ -6,15 +6,15 @@ services:
     container_name: mlflow_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: mlflow
-      POSTGRES_PASSWORD: mlflow
-      POSTGRES_DB: mlflow
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mlflow -d mlflow"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -29,7 +29,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      BACKEND_STORE_URI: postgresql://mlflow:mlflow@postgres:5432/mlflow
+      BACKEND_STORE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       # S3 Configuration
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
@@ -38,7 +38,7 @@ services:
       - "5000:5000"
     command: >
       mlflow server
-      --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow
+      --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       --default-artifact-root s3://${S3_BUCKET_NAME}/mlflow-artifacts
       --host 0.0.0.0
 

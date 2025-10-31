@@ -51,7 +51,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2) Environment Variables (S3 / MLflow)
+### 2) Environment Variables (S3 / MLflow / Grafana / PostgreSQL)
 
 ⚠️ **IMPORTANT**: Create a `.env` file at project root (not committed, already in `.gitignore`):
 
@@ -61,6 +61,21 @@ AWS_ACCESS_KEY_ID=your_access_key_here
 AWS_SECRET_ACCESS_KEY=your_secret_key_here
 AWS_DEFAULT_REGION=eu-west-1
 S3_BUCKET_NAME=your-bucket-name
+
+# Grafana Configuration (for monitoring dashboard)
+GF_SECURITY_ADMIN_USER=admin
+GF_SECURITY_ADMIN_PASSWORD=your_secure_password
+
+# PostgreSQL Configuration (for MLflow backend)
+POSTGRES_USER=mlflow
+POSTGRES_PASSWORD=your_secure_password
+POSTGRES_DB=mlflow
+```
+
+💡 **Tip**: You can copy `.env.example` to `.env` and fill in your actual values:
+```bash
+cp .env.example .env
+nano .env  # Edit with your values
 ```
 
 Docker Compose automatically loads this `.env` file for containers.
@@ -150,7 +165,7 @@ docker-compose -f docker-compose.monitor.yml up -d
 
 # Access dashboards
 # Prometheus: http://localhost:9090
-# Grafana: http://localhost:3000 (admin/admin)
+# Grafana: http://localhost:3000 (use credentials from .env file: GF_SECURITY_ADMIN_USER / GF_SECURITY_ADMIN_PASSWORD)
 ```
 
 **Generate Evidently drift report**:

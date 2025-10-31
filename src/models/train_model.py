@@ -43,6 +43,52 @@ git_commit = _git(["git", "rev-parse", "--short", "HEAD"])
 git_branch = _git(["git", "rev-parse", "--abbrev-ref", "HEAD"])
 
 
+def compare_and_promote_model(client, model_name, current_run_id, current_metrics):
+    """
+    Compare current model with Production alias model and decide promotion strategy.
+    Uses MLflow's new alias system instead of deprecated stages.
+    
+    Returns:
+        tuple: (alias, reason) where alias is "champion" or "challenger"
+    """
+    try:
+        # Get current Production model using alias system
+        try:
+            prod_version = client.get_model_version_by_alias(model_name, "champion")
+        except mlflow.exceptions.MlflowException:
+            # No champion model exists, promote directly
+            return "champion", "no_existing_champion_model"
+        
+        prod_run = client.get_run(prod_version.run_id)
+        prod_metrics = prod_run.data.metrics
+        
+        # Extract metrics for comparison
+        current_f1 = current_metrics.get("f1_weighted", 0.0)
+        current_acc = current_metrics.get("accuracy", 0.0)
+        prod_f1 = prod_metrics.get("f1_weighted", 0.0)
+        prod_acc = prod_metrics.get("accuracy", 0.0)
+        
+        print(f"\n=== Model Comparison ===")
+        print(f"Champion (v{prod_version.version}): F1={prod_f1:.4f}, Acc={prod_acc:.4f}")
+        print(f"Current Run: F1={current_f1:.4f}, Acc={current_acc:.4f}")
+        
+        # Decision logic: F1 weighted is primary, accuracy is tiebreaker
+        if current_f1 > prod_f1:
+            return "champion", f"better_f1_weighted ({current_f1:.4f} > {prod_f1:.4f})"
+        elif current_f1 == prod_f1:
+            if current_acc > prod_acc:
+                return "champion", f"equal_f1_but_better_accuracy ({current_acc:.4f} > {prod_acc:.4f})"
+            else:
+                return "challenger", f"equal_f1_but_lower_or_equal_accuracy ({current_acc:.4f} <= {prod_acc:.4f})"
+        else:
+            return "challenger", f"lower_f1_weighted ({current_f1:.4f} <= {prod_f1:.4f})"
+            
+    except Exception as e:
+        print(f"Error comparing with Champion model: {e}")
+        # Fallback to challenger if comparison fails
+        return "challenger", f"comparison_error: {str(e)}"
+
+
 def main():
     print("Loading processed data...")
     df = pd.read_csv(INPUT_FILE)
@@ -112,7 +158,6 @@ def main():
             max_iter=model_params["max_iter"],
             random_state=model_params["random_state"],
             solver="lbfgs",  # multinomial-capable
-            multi_class="auto",
         )
         model.fit(X_train_vec, y_train)
 
@@ -135,11 +180,17 @@ def main():
         # --- Log model to MLflow ---
         print("Logging model to MLflow...")
         
+        # Prepare input example (pandas Series matching pipeline input format)
+        input_example = pd.Series(
+            ["Smartphone Samsung Galaxy dernière génération avec écran AMOLED"],
+            name="text"
+        )
+        
         # Log the sklearn pipeline
         model_info = mlflow.sklearn.log_model(
             sk_model=pipeline,
             artifact_path="model",
-            input_example=["sample designation sample description"]
+            input_example=input_example
         )
         
         # --- Register model in MLflow Model Registry (manual registration) ---
@@ -164,14 +215,30 @@ def main():
             )
             print(f"Created model version {model_version.version}")
             
-            # Optional: automatically promote to Production
-            client.transition_model_version_stage(
-                name="rakuten-baseline",
-                version=model_version.version,
-                stage="Production",
-                archive_existing_versions=True
+            # --- Compare and decide promotion ---
+            current_metrics = {"f1_weighted": f1, "accuracy": acc}
+            target_alias, promotion_reason = compare_and_promote_model(
+                client=client,
+                model_name="rakuten-baseline",
+                current_run_id=mlflow.active_run().info.run_id,
+                current_metrics=current_metrics
             )
-            print(f"Promoted model version {model_version.version} to Production.")
+            
+            # Add auto-promotion tags to the run
+            mlflow.set_tags({
+                "auto_promotion_candidate": target_alias,
+                "auto_promotion_reason": promotion_reason
+            })
+            
+            # Set the model alias (replaces stage transition)
+            client.set_registered_model_alias(
+                name="rakuten-baseline",
+                alias=target_alias,
+                version=model_version.version
+            )
+            print(f"✓ Set alias '{target_alias}' to model version {model_version.version}")
+            print(f"  Reason: {promotion_reason}")
+            
         except Exception as e:
             print(f"Model version creation or promotion failed: {e}")
 
