@@ -214,6 +214,18 @@ Notes:
 * **DVC**: Manages pipeline outputs (`data/interim`, `data/processed`, `models/*`) and syncs to Dagshub.
 * **Branches**: Work on feature branches (e.g., `Dev`) then PR to `main`.
 
+## 🔒 Security Best Practices
+
+* ✅ **Never commit `.env`** (already in `.gitignore`)
+* ✅ **Always commit `.env.example`** to document required variables
+* ⚠️ **Use strong passwords** in production environments
+* 🔄 **Rotate secrets regularly** (AWS keys, database passwords, Grafana credentials)
+* 🔐 **For production deployments**, do not use `.env` files. Instead use:
+  - **Cloud secret managers**: AWS Secrets Manager, Azure Key Vault, Google Cloud Secret Manager
+  - **CI/CD secrets**: GitHub Secrets, GitLab CI/CD Variables
+  - **Kubernetes**: Kubernetes Secrets, External Secrets Operator
+  - **On-premise**: HashiCorp Vault
+
 ## 🆘 Troubleshooting
 
 * **Error `OSError: [Errno 30] Read-only file system: '/mlflow'`**: 
