@@ -1,180 +1,165 @@
-# Sécurité et Configuration des Variables d'Environnement
+# Security & Environment Configuration
 
-## 📋 Vue d'ensemble
+## 📋 Overview
 
-Les identifiants sensibles ont été externalisés dans le fichier `.env` pour améliorer la sécurité du projet.
+This project uses environment variables stored in a `.env` file to manage sensitive credentials securely.
 
-## 🔐 Fichiers de Configuration
+## 🔐 Configuration Files
 
-### `.env` (NON versionné)
-- Contient les **vraies valeurs** des identifiants
-- Ignoré par Git (voir `.gitignore`)
-- À créer localement sur chaque environnement
-- **Ne JAMAIS commiter ce fichier**
+### `.env` (NOT versioned)
+- Contains **actual credentials**
+- Ignored by Git (see `.gitignore`)
+- Must be created locally on each environment
+- **NEVER commit this file**
 
-### `.env.example` (Versionné)
-- Modèle documentant les variables requises
-- Contient des valeurs d'exemple/placeholders
-- Peut être versionné dans Git
-- Sert de documentation pour les nouveaux développeurs
+### `.env.example` (Versioned)
+- Template documenting required variables
+- Contains example/placeholder values
+- Safe to version in Git
+- Serves as documentation
 
-## ⚙️ Variables Externalisées
+## ⚙️ Required Environment Variables
 
-Les variables suivantes ont été déplacées vers `.env` :
-
-### Grafana
+### Grafana (Monitoring Dashboard)
 ```bash
-GF_SECURITY_ADMIN_USER=seba
-GF_SECURITY_ADMIN_PASSWORD=sebamlops
+GF_SECURITY_ADMIN_USER=admin
+GF_SECURITY_ADMIN_PASSWORD=your_secure_password
 ```
 
-### PostgreSQL
+### PostgreSQL (MLflow Backend)
 ```bash
 POSTGRES_USER=mlflow
-POSTGRES_PASSWORD=mlflow
+POSTGRES_PASSWORD=your_secure_password
 POSTGRES_DB=mlflow
 ```
 
-### AWS S3 (déjà externalisées)
+### AWS S3 (MLflow Artifacts Storage)
 ```bash
-AWS_ACCESS_KEY_ID=***
-AWS_SECRET_ACCESS_KEY=***
+AWS_ACCESS_KEY_ID=your_access_key_here
+AWS_SECRET_ACCESS_KEY=your_secret_key_here
 AWS_DEFAULT_REGION=eu-west-1
-S3_BUCKET_NAME=mlops-rakuten-seba
+S3_BUCKET_NAME=your-bucket-name
 ```
 
-## 📊 Impacts de la Migration
+## 🚀 Quick Setup
 
-### ✅ Avantages
+### Initial Configuration
 
-1. **Sécurité Renforcée**
-   - Les identifiants ne sont plus visibles dans le code
-   - Pas de risque de commit accidentel des credentials
-   - Conformité aux bonnes pratiques de sécurité
-
-2. **Gestion Multi-Environnements**
-   - Différents `.env` pour dev/staging/production
-   - Pas besoin de modifier les docker-compose
-   - Facilite les déploiements
-
-3. **Flexibilité**
-   - Changement de mot de passe sans toucher au code
-   - Configuration différente par développeur
-   - Rotation des secrets simplifiée
-
-4. **Auditabilité**
-   - Les changements de config ne polluent pas l'historique Git
-   - Traçabilité des modifications de structure seulement
-
-### ⚠️ Points d'Attention
-
-1. **Configuration Initiale**
-   - **IMPACT** : Chaque développeur doit créer son `.env`
-   - **SOLUTION** : Copier `.env.example` vers `.env` et remplir les valeurs
-   ```bash
-   cp .env.example .env
-   # Puis éditer .env avec les vraies valeurs
-   ```
-
-2. **Docker Compose**
-   - **IMPACT** : Docker Compose doit charger le `.env`
-   - **SOLUTION** : Docker Compose charge automatiquement `.env` du répertoire courant
-   - Pas de changement nécessaire dans les commandes
-
-3. **CI/CD**
-   - **IMPACT** : Les pipelines doivent définir les variables d'environnement
-   - **SOLUTION** : Utiliser les secrets du CI/CD (GitHub Secrets, GitLab CI/CD Variables, etc.)
-
-4. **Documentation Équipe**
-   - **IMPACT** : L'équipe doit connaître les nouvelles variables
-   - **SOLUTION** : Ce fichier + `.env.example` documentent tout
-
-## 🚀 Migration - Comment Utiliser
-
-### Pour les Nouveaux Développeurs
-
-1. Cloner le repository
-2. Copier le fichier template :
+1. Clone the repository
+2. Copy the template file:
    ```bash
    cp .env.example .env
    ```
-3. Éditer `.env` avec les vraies valeurs (demander à l'équipe)
-4. Lancer les services normalement :
+3. Edit `.env` with your actual credentials
+4. Start services:
    ```bash
-   docker-compose -f docker-compose.monitor.yml up
-   docker-compose -f docker-compose.mlflow.yml up
-   docker-compose -f docker-compose.api.yml up
+   docker-compose -f docker-compose.api.yml up -d
+   docker-compose -f docker-compose.monitor.yml up -d
    ```
 
-### Pour les Développeurs Existants
+### Running the Pipeline
 
-Si vous aviez déjà lancé les services :
-1. Le fichier `.env` a été créé/mis à jour automatiquement
-2. Arrêter les conteneurs existants :
-   ```bash
-   docker-compose -f docker-compose.monitor.yml down
-   docker-compose -f docker-compose.mlflow.yml down
-   docker-compose -f docker-compose.api.yml down
-   ```
-3. Recréer les conteneurs :
-   ```bash
-   docker-compose -f docker-compose.monitor.yml up --build
-   docker-compose -f docker-compose.mlflow.yml up --build
-   docker-compose -f docker-compose.api.yml up --build
-   ```
+Load environment variables before running scripts:
+```bash
+# Activate virtual environment
+source .venv/bin/activate
 
-## 🔍 Vérification
+# Load environment variables
+export $(cat .env | grep -v '^#' | xargs)
 
-Pour vérifier que les variables sont bien chargées :
+# Set MLflow tracking URI
+export MLFLOW_TRACKING_URI=http://localhost:5000
+
+# Run pipeline
+python flows/pipeline_flow.py
+```
+
+## 🔍 Verification
+
+Check that environment variables are loaded:
 
 ```bash
-# Vérifier que le .env existe
+# Verify .env exists
 ls -la .env
 
-# Lancer avec verbose pour voir les variables
-docker-compose -f docker-compose.monitor.yml config
+# Check variables in Docker Compose
+docker-compose -f docker-compose.api.yml config
+
+# Check variables in shell
+echo $AWS_ACCESS_KEY_ID
+echo $POSTGRES_USER
 ```
 
-## 🛡️ Bonnes Pratiques
+## 🛡️ Security Best Practices
 
-1. **Ne jamais commiter `.env`** ✅ (déjà dans `.gitignore`)
-2. **Toujours commiter `.env.example`** ✅
-3. **Utiliser des mots de passe forts** en production
-4. **Rotation régulière des secrets** (AWS, PostgreSQL, Grafana)
-5. **Utiliser des gestionnaires de secrets** pour la production (AWS Secrets Manager, Vault, etc.)
+1. ✅ **Never commit `.env`** (already in `.gitignore`)
+2. ✅ **Always commit `.env.example`**
+3. ⚠️ **Use strong passwords** in production
+4. 🔄 **Rotate secrets regularly** (AWS, PostgreSQL, Grafana)
+5. 🔐 **Use secret managers in production** (AWS Secrets Manager, HashiCorp Vault, etc.)
 
-## 📝 Checklist de Sécurité
+## 📝 Security Checklist
 
-- [x] `.env` est dans `.gitignore`
-- [x] `.env.example` est versionné
-- [x] Pas d'identifiants en dur dans `docker-compose*.yml`
-- [x] Documentation des variables créée
-- [ ] Rotation des mots de passe pour la production
-- [ ] Configuration des secrets CI/CD (si applicable)
+- [x] `.env` is in `.gitignore`
+- [x] `.env.example` is versioned
+- [x] No hardcoded credentials in `docker-compose*.yml`
+- [x] Variables documentation created
+- [ ] Secrets rotation procedure documented
+- [ ] CI/CD secrets configured (if applicable)
+- [ ] Production uses a secret manager
 
-## 🆘 Dépannage
+## 🆘 Troubleshooting
 
-### Erreur "variable not set"
+### Error: "variable not set"
 ```bash
-# Vérifier que le .env existe dans le bon répertoire
+# Verify .env exists in project root
 pwd
 ls .env
+
+# Check file content (redact sensitive values)
+cat .env | grep -v PASSWORD | grep -v KEY
 ```
 
-### Les variables ne sont pas chargées
+### Variables not loaded
 ```bash
-# S'assurer d'être dans le bon répertoire
-cd /Users/sebastien/Documents/DataScientest/sep25_cmlops_rakuten
+# Ensure you're in the correct directory
+cd /path/to/sep25_cmlops_rakuten
 
-# Recréer les conteneurs
-docker-compose -f docker-compose.monitor.yml down
-docker-compose -f docker-compose.monitor.yml up
+# Restart containers
+docker-compose -f docker-compose.api.yml down
+docker-compose -f docker-compose.api.yml up -d
 ```
 
-### PostgreSQL refuse la connexion
-Vérifier que `POSTGRES_USER`, `POSTGRES_PASSWORD` et `POSTGRES_DB` sont cohérents dans `.env` et que les anciennes données ne créent pas de conflit :
+### MLflow: "OSError: Read-only file system"
+This means environment variables are not loaded. Solution:
 ```bash
-docker-compose -f docker-compose.mlflow.yml down -v  # -v pour supprimer les volumes
-docker-compose -f docker-compose.mlflow.yml up
+export $(cat .env | grep -v '^#' | xargs)
+export MLFLOW_TRACKING_URI=http://localhost:5000
 ```
+
+### PostgreSQL connection refused
+Reset database volumes if credentials changed:
+```bash
+docker-compose -f docker-compose.mlflow.yml down -v  # -v removes volumes
+docker-compose -f docker-compose.mlflow.yml up -d
+```
+
+## 🔒 Production Deployment
+
+For production environments, **do not use `.env` files**. Instead:
+
+1. **Use secret management services:**
+   - AWS Secrets Manager / Parameter Store
+   - Azure Key Vault
+   - Google Cloud Secret Manager
+   - HashiCorp Vault
+
+2. **For CI/CD:**
+   - GitHub Secrets
+   - GitLab CI/CD Variables
+   - Jenkins Credentials
+
+3. **For Kubernetes:**
+   - Kubernetes Secrets
+   - External Secrets Operator
 
