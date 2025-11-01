@@ -2,6 +2,6 @@
 # the performance. Learn more at
 # https://dvc.org/doc/user-guide/dvcignore
 
-# Temporarily ignore images data to keep only locally
-data/raw/images/
-data/raw/images.zip
+# Images are now tracked by DVC for multimodal learning
+# data/raw/images/
+# data/raw/images.zip

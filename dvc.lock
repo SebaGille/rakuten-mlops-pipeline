@@ -17,9 +17,9 @@ stages:
       size: 906705
     - path: data/raw/images/image_train
       hash: md5
-      md5: d751713988987e9331980363e24189ce.dir
-      size: 0
-      nfiles: 0
+      md5: d29a5e5a3b12a64121b7e6b1179a16e5.dir
+      size: 2257219410
+      nfiles: 84916
     - path: src/data/make_dataset.py
       hash: md5
       md5: 2602fba43696b1f165dafdac55812586
@@ -36,12 +36,65 @@ stages:
       hash: md5
       md5: 8f6282b42301ffdf414af840d5817ceb
       size: 54537448
+    - path: data/raw/images/image_train
+      hash: md5
+      md5: d29a5e5a3b12a64121b7e6b1179a16e5.dir
+      size: 2257219410
+      nfiles: 84916
     - path: src/features/build_features.py
       hash: md5
-      md5: f2c0ea8157be2cacb0ffc816bdc60496
-      size: 1677
+      md5: 2d49e55358271af9803e2f9b3d6cbd79
+      size: 4579
     outs:
+    - path: data/processed/image_features.npy
+      hash: md5
+      md5: 014edac295cae33a41b579f5dfa3f272
+      size: 434770048
     - path: data/processed/train_features.csv
       hash: md5
       md5: 12dd3dcc5f477fcbbba479334bd21877
       size: 51021808
+  train:
+    cmd: python src/models/train_model.py
+    deps:
+    - path: data/processed/image_features.npy
+      hash: md5
+      md5: 014edac295cae33a41b579f5dfa3f272
+      size: 434770048
+    - path: data/processed/train_features.csv
+      hash: md5
+      md5: 12dd3dcc5f477fcbbba479334bd21877
+      size: 51021808
+    - path: src/models/train_model.py
+      hash: md5
+      md5: 9a174511667993a058342f755fe02b25
+      size: 11785
+    outs:
+    - path: models/baseline_model.pkl
+      hash: md5
+      md5: 43755b6f6d6a0639f20a556e622818fb
+      size: 353195587
+    - path: models/metrics.json
+      hash: md5
+      md5: 6cbe42d97f54aea715c6a323ab43559e
+      size: 103
+  predict:
+    cmd: python src/models/predict_model.py
+    deps:
+    - path: data/raw/X_test.csv
+      hash: md5
+      md5: d52ec4a79f8f01da099bd3bca4c619d1
+      size: 8818548
+    - path: models/baseline_model.pkl
+      hash: md5
+      md5: 43755b6f6d6a0639f20a556e622818fb
+      size: 353195587
+    - path: src/models/predict_model.py
+      hash: md5
+      md5: 1c693383885a3abc052a3b75dcd4b457
+      size: 4519
+    outs:
+    - path: data/processed/predictions.csv
+      hash: md5
+      md5: 3a95d5850deb64e69589435acaf91fd5
+      size: 213711

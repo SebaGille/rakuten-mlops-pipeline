@@ -13,13 +13,16 @@ stages:
     cmd: python src/features/build_features.py
     deps:
     - data/interim/merged_train.csv
+    - data/raw/images/image_train
     - src/features/build_features.py
     outs:
     - data/processed/train_features.csv
+    - data/processed/image_features.npy
   train:
     cmd: python src/models/train_model.py
     deps:
     - data/processed/train_features.csv
+    - data/processed/image_features.npy
     - src/models/train_model.py
     outs:
     - models/baseline_model.pkl

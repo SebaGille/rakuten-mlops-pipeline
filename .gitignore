@@ -82,6 +82,7 @@ target/
 /data/**/*.zip
 /data/**/*.pkl
 /data/**/*.json
+/data/**/*.npy
 # but allow DVC files to be tracked
 !data/**/*.dvc
 

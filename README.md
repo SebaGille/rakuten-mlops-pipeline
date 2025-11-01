@@ -271,6 +271,158 @@ Notes:
 
 **Author**: Sébastien
 
+## 🧪 Testing
+
+A comprehensive testing suite is available to verify all components of the MLOps pipeline.
+
+### Quick Health Check
+```bash
+./quick_test.sh
+```
+
+### Documentation
+
+📖 **Start here:** [TESTING_INDEX.md](TESTING_INDEX.md) - Complete navigation guide and overview
+
+Then choose based on your needs:
+- **[TESTING_CHECKLIST.md](TESTING_CHECKLIST.md)** - Quick reference for daily/weekly testing (5-30 min)
+- **[TESTING_PROCEDURE.md](TESTING_PROCEDURE.md)** - Comprehensive step-by-step guide (30-120 min)
+
+**System Architecture**: See the "System Architecture" section below in this README
+
+### What Gets Tested
+✅ Docker services (5 containers)  
+✅ API endpoints (health, predict, metrics)  
+✅ MLflow tracking and model registry  
+✅ Prometheus + Grafana monitoring  
+✅ DVC pipeline and data versioning  
+✅ Prefect orchestration  
+✅ GitHub Actions workflows  
+✅ Evidently drift detection  
+✅ End-to-end integration  
+
+**Recommended**: Run `./quick_test.sh` daily, follow `TESTING_CHECKLIST.md` weekly.
+
+## 🏗️ System Architecture
+
+### Architecture Overview
+
+The MLOps pipeline consists of 7 integrated layers:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    RAKUTEN MLOps PIPELINE                       │
+└─────────────────────────────────────────────────────────────────┘
+
+1. VERSION CONTROL LAYER
+   ├── Git (Code versioning)
+   └── DVC (Data/model versioning) → Dagshub remote
+
+2. DOCKER INFRASTRUCTURE LAYER
+   ├── docker-compose.api.yml
+   │   ├── PostgreSQL (:5432) → MLflow backend store
+   │   ├── MLflow (:5000) → Experiment tracking server
+   │   └── Rakuten API (:8000) → FastAPI model serving
+   └── docker-compose.monitor.yml
+       ├── Prometheus (:9090) → Metrics collection
+       └── Grafana (:3000) → Dashboards & visualization
+
+3. ML PIPELINE LAYER (DVC)
+   data/raw → ingest → data/interim → features → 
+   data/processed → train → models/ → predict → predictions.csv
+
+4. EXPERIMENT TRACKING LAYER
+   MLflow Tracking Server
+   ├── Backend: PostgreSQL (experiments, runs, metrics)
+   ├── Artifacts: AWS S3 (models, vectorizers, plots)
+   └── Model Registry: rakuten-baseline [Production]
+
+5. MONITORING & DRIFT DETECTION LAYER
+   ├── Prometheus: Custom metrics (predictions, latency, text length)
+   ├── Grafana: Real-time dashboards
+   └── Evidently: Drift detection reports (HTML/JSON)
+
+6. ORCHESTRATION LAYER
+   Prefect
+   ├── pipeline_flow.py: Full ML pipeline
+   └── monitor_and_retrain.py: Drift check + conditional retraining
+       Schedule: Daily at 9:00 UTC
+
+7. CI/CD LAYER (GitHub Actions)
+   ├── python-app.yml: Linting + testing on push
+   ├── deploy_api.yml: Docker build + push to GHCR
+   └── drift_monitor.yml: Daily drift checks + issue creation
+```
+
+### Test Coverage Matrix
+
+| Component | Unit Tests | Integration Tests | E2E Tests | Monitoring |
+|-----------|:----------:|:-----------------:|:---------:|:----------:|
+| Data Ingestion | ✅ | ✅ | ✅ | ❌ |
+| Feature Engineering | ✅ | ✅ | ✅ | ❌ |
+| Model Training | ✅ | ✅ | ✅ | ✅ MLflow |
+| Model Prediction | ✅ | ✅ | ✅ | ✅ Logs |
+| FastAPI | ⚠️ | ✅ | ✅ | ✅ Prometheus |
+| MLflow Tracking | ❌ | ✅ | ✅ | ✅ UI |
+| PostgreSQL | ❌ | ✅ | ✅ | ⚠️ |
+| Prometheus | ❌ | ✅ | ✅ | ✅ |
+| Grafana | ❌ | ✅ | ✅ | ✅ |
+| Evidently | ❌ | ✅ | ✅ | ✅ |
+| Prefect | ❌ | ✅ | ✅ | ⚠️ |
+| DVC Pipeline | ❌ | ✅ | ✅ | ❌ |
+| GitHub Actions | ❌ | ✅ | ✅ | ✅ |
+
+**Legend**: ✅ = Fully covered | ⚠️ = Partially covered | ❌ = Not applicable
+
+### Data Flow
+
+```
+USER REQUEST
+     │
+     ▼
+┌─────────────────────┐
+│   FastAPI /predict  │  ◀──── API receives designation + description
+└─────────────────────┘
+     │
+     ├─── Log metrics to Prometheus (predictions_total, latency, text_len)
+     ├─── Log inference to CSV (for drift detection)
+     │
+     ▼
+┌─────────────────────┐
+│ Load Model from     │  ◀──── Fetch "rakuten-baseline" [Production]
+│ MLflow Registry     │        from MLflow Model Registry
+└─────────────────────┘
+     │
+     ▼
+┌─────────────────────┐
+│ Predict with        │  ◀──── sklearn Pipeline (TfidfVectorizer + Model)
+│ sklearn Pipeline    │
+└─────────────────────┘
+     │
+     ▼
+RETURN PREDICTION (product type code)
+```
+
+### Critical Paths
+
+**Path 1: Training to Production**
+```
+Data (DVC) → Features → Train (MLflow) → Register Model → 
+API loads model → Predict
+```
+
+**Path 2: Monitoring & Alerting**
+```
+API /predict → Prometheus scrapes → Grafana displays → 
+Drift check (Evidently) → GitHub Issue created (if drift)
+```
+
+**Path 3: CI/CD Deployment**
+```
+Code push → GitHub Actions → Tests pass → Docker build → 
+Push to GHCR → Deploy
+```
+
 ## 📌 License
 
 See `LICENSE`.

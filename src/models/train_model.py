@@ -7,12 +7,20 @@ import boto3
 import joblib
 import mlflow
 import mlflow.sklearn
+import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
+from scipy.sparse import hstack, csr_matrix
+
+# Handle imports for both package and script execution
+try:
+    from src.models.multimodal import MultiModalClassifier
+except ModuleNotFoundError:
+    from multimodal import MultiModalClassifier
 
 
 # --- Paths & Config ---
@@ -28,8 +36,9 @@ DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
 MODELS_DIR = PROJECT_ROOT / "models"
 METRICS_FILE = MODELS_DIR / "metrics.json"
 INPUT_FILE = DATA_PROCESSED / "train_features.csv"
+IMAGE_FEATURES_FILE = DATA_PROCESSED / "image_features.npy"
 MODEL_FILE = MODELS_DIR / "baseline_model.pkl"
-EXPERIMENT_NAME = "rakuten-baseline-S3-MLflow"
+EXPERIMENT_NAME = "rakuten-multimodal-text-image"
 MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
 
 
@@ -100,35 +109,54 @@ def main():
     if missing:
         raise KeyError(f"Missing required columns: {sorted(missing)}")
 
+    # Load image features
+    print("Loading image features...")
+    if not IMAGE_FEATURES_FILE.exists():
+        raise FileNotFoundError(f"Image features not found: {IMAGE_FEATURES_FILE}. Run build_features.py first.")
+    image_features = np.load(IMAGE_FEATURES_FILE)
+    print(f"Image features shape: {image_features.shape}")
+    
+    if len(df) != len(image_features):
+        raise ValueError(f"Mismatch: {len(df)} rows in CSV but {len(image_features)} image features")
+
     # Combine text
     df["text"] = df["designation_clean"].fillna("") + " " + df["description_clean"].fillna("")
-    X = df["text"]
+    X_text = df["text"]
     y = df["prdtypecode"]
 
-    # Split (fallback to non-stratified if class counts are problematic)
+    # Split data (same random_state for both text and images to keep alignment)
     try:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
+        X_text_train, X_text_test, y_train, y_test, img_train, img_test = train_test_split(
+            X_text, y, image_features, test_size=0.2, random_state=42, stratify=y
         )
     except ValueError as e:
         print(f"Stratified split failed ({e}); falling back to non-stratified split.")
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=None
+        X_text_train, X_text_test, y_train, y_test, img_train, img_test = train_test_split(
+            X_text, y, image_features, test_size=0.2, random_state=42, stratify=None
         )
+    
+    print(f"Train set: {len(X_text_train)} samples")
+    print(f"Test set: {len(X_text_test)} samples")
 
     # --- MLflow setup ---
     mlflow.set_tracking_uri(MLFLOW_URI)
     mlflow.set_experiment(EXPERIMENT_NAME)
 
     vec_params = {"max_features": 20000, "ngram_range": (1, 2)}
-    model_params = {"model": "LogisticRegression", "max_iter": 200, "random_state": 42}
+    model_params = {
+        "model": "MultiModalLogisticRegression", 
+        "max_iter": 200, 
+        "random_state": 42,
+        "image_features_dim": image_features.shape[1]
+    }
 
-    with mlflow.start_run(run_name="baseline-logreg-tfidf"):
+    with mlflow.start_run(run_name="multimodal-text-image-logreg"):
         # Log params
         mlflow.log_params(
             {
                 "vec_max_features": vec_params["max_features"],
                 "vec_ngram_range": str(vec_params["ngram_range"]),
+                "modality": "text+image",
                 **model_params,
             }
         )
@@ -137,7 +165,9 @@ def main():
             "git_commit": git_commit,
             "git_branch": git_branch,
             "dvc_repo_rev": git_commit,   
-            "pipeline_stages": "ingest→features→train"
+            "pipeline_stages": "ingest→features(text+image)→train",
+            "model_type": "multimodal",
+            "image_model": "MobileNetV2"
         })
 
         # Joindre les manifests DVC/Git de la run
@@ -145,24 +175,32 @@ def main():
         if (PROJECT_ROOT / "dvc.lock").exists():
             mlflow.log_artifact(str(PROJECT_ROOT / "dvc.lock"))
 
-        print("Vectorizing text...")
+        print("\n=== Training Multi-Modal Model (Text + Image) ===")
+        print("Creating vectorizer...")
         vectorizer = TfidfVectorizer(
             max_features=vec_params["max_features"],
             ngram_range=vec_params["ngram_range"],
         )
-        X_train_vec = vectorizer.fit_transform(X_train)
-        X_test_vec = vectorizer.transform(X_test)
 
-        print("Training baseline model (Logistic Regression)...")
-        model = LogisticRegression(
+        print("Creating classifier...")
+        classifier = LogisticRegression(
             max_iter=model_params["max_iter"],
             random_state=model_params["random_state"],
-            solver="lbfgs",  # multinomial-capable
+            solver="lbfgs",
         )
-        model.fit(X_train_vec, y_train)
+
+        print("Creating multi-modal model...")
+        multimodal_model = MultiModalClassifier(
+            vectorizer=vectorizer,
+            image_features_train=img_train,
+            classifier=classifier
+        )
+
+        print("Training model on combined features (text + image)...")
+        multimodal_model.fit(X_text_train, y_train)
 
         print("Evaluating model...")
-        y_pred = model.predict(X_test_vec)
+        y_pred = multimodal_model.predict(X_text_test, image_features_test=img_test)
         acc = accuracy_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred, average="weighted")
         print(f"Accuracy: {acc:.4f} | F1-weighted: {f1:.4f}")
@@ -170,46 +208,58 @@ def main():
         # Log metrics
         mlflow.log_metrics({"accuracy": acc, "f1_weighted": f1})
 
-        # --- Create Pipeline for MLflow Model Registry ---
-        print("Creating pipeline (vectorizer + model)...")
-        pipeline = Pipeline([
-            ('vectorizer', vectorizer),
-            ('classifier', model)
-        ])
-
         # --- Log model to MLflow ---
-        print("Logging model to MLflow...")
+        print("Logging multimodal model to MLflow...")
         
-        # Prepare input example (pandas Series matching pipeline input format)
-        input_example = pd.Series(
-            ["Smartphone Samsung Galaxy dernière génération avec écran AMOLED"],
-            name="text"
-        )
+        # Note: MLflow sklearn.log_model doesn't support custom objects easily
+        # We'll use pyfunc for custom multimodal model or just log as artifact
+        # For now, log as joblib artifact and metadata
         
-        # Log the sklearn pipeline
-        model_info = mlflow.sklearn.log_model(
-            sk_model=pipeline,
-            artifact_path="model",
-            input_example=input_example
-        )
+        # Save model locally first
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        model_data = {
+            "multimodal_model": multimodal_model,
+            "vectorizer": vectorizer,
+            "classifier": classifier
+        }
+        joblib.dump(model_data, MODEL_FILE)
+        print(f"Saved model locally → {MODEL_FILE}")
         
-        # --- Register model in MLflow Model Registry (manual registration) ---
-        print("Registering model in MLflow Model Registry...")
+        # Save metrics
+        with open(METRICS_FILE, "w") as f:
+            json.dump({"accuracy": acc, "f1_weighted": f1, "model_type": "multimodal"}, f, indent=2)
+        print(f"Saved metrics → {METRICS_FILE}")
+
+        # Log artifacts to MLflow
+        if not MODEL_FILE.exists():
+            raise FileNotFoundError(f"Model file not found: {MODEL_FILE}")
+        if not METRICS_FILE.exists():
+            raise FileNotFoundError(f"Metrics file not found: {METRICS_FILE}")
+
+        mlflow.log_artifact(str(MODEL_FILE))
+        mlflow.log_artifact(str(METRICS_FILE))
+        
+        # Log image features file info (not the actual file, too large)
+        mlflow.log_param("image_features_file", str(IMAGE_FEATURES_FILE))
+        mlflow.log_param("image_features_shape", str(image_features.shape))
+
+        # --- Register model in MLflow Model Registry ---
+        print("\nRegistering model in MLflow Model Registry...")
+        model_name = "rakuten-multimodal"
         try:
             client = mlflow.tracking.MlflowClient()
-            model_uri = f"runs:/{mlflow.active_run().info.run_id}/model"
             
-            # Register the model
-            result = client.create_registered_model("rakuten-baseline")
-            print(f"Created registered model: {result.name}")
-        except Exception as e:
-            # Model already exists, continue
-            print(f"Model already registered (this is normal): {e}")
-        
-        # Create a new model version
-        try:
+            # Try to create registered model (will fail if already exists)
+            try:
+                result = client.create_registered_model(model_name)
+                print(f"Created registered model: {result.name}")
+            except Exception as e:
+                print(f"Model '{model_name}' already registered (this is normal): {e}")
+            
+            # Create a new model version using the logged artifact
+            model_uri = f"runs:/{mlflow.active_run().info.run_id}/{MODEL_FILE.name}"
             model_version = client.create_model_version(
-                name="rakuten-baseline",
+                name=model_name,
                 source=model_uri,
                 run_id=mlflow.active_run().info.run_id
             )
@@ -219,7 +269,7 @@ def main():
             current_metrics = {"f1_weighted": f1, "accuracy": acc}
             target_alias, promotion_reason = compare_and_promote_model(
                 client=client,
-                model_name="rakuten-baseline",
+                model_name=model_name,
                 current_run_id=mlflow.active_run().info.run_id,
                 current_metrics=current_metrics
             )
@@ -230,9 +280,9 @@ def main():
                 "auto_promotion_reason": promotion_reason
             })
             
-            # Set the model alias (replaces stage transition)
+            # Set the model alias
             client.set_registered_model_alias(
-                name="rakuten-baseline",
+                name=model_name,
                 alias=target_alias,
                 version=model_version.version
             )
@@ -240,26 +290,13 @@ def main():
             print(f"  Reason: {promotion_reason}")
             
         except Exception as e:
-            print(f"Model version creation or promotion failed: {e}")
+            print(f"Model registration/promotion error: {e}")
 
-        # Save local artifacts
-        MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        joblib.dump({"pipeline": pipeline, "model": model, "vectorizer": vectorizer}, MODEL_FILE)
-        with open(METRICS_FILE, "w") as f:
-            json.dump({"accuracy": acc, "f1_weighted": f1}, f, indent=2)
-
-        # Log artifacts to MLflow
-        if not MODEL_FILE.exists():
-            raise FileNotFoundError(f"Model file not found: {MODEL_FILE}")
-        if not METRICS_FILE.exists():
-            raise FileNotFoundError(f"Metrics file not found: {METRICS_FILE}")
-
-        mlflow.log_artifact(str(MODEL_FILE))   # baseline_model.pkl (model + vectorizer)
-        mlflow.log_artifact(str(METRICS_FILE))
-
-        print(f"Saved model → {MODEL_FILE}")
-        print(f"Saved metrics → {METRICS_FILE}")
-        print("Run logged to MLflow.")
+        print(f"\n✓ Training completed successfully!")
+        print(f"  Model: {MODEL_FILE}")
+        print(f"  Metrics: {METRICS_FILE}")
+        print(f"  MLflow experiment: {EXPERIMENT_NAME}")
+        print(f"  Run logged to MLflow.")
 
 
 if __name__ == "__main__":
