@@ -82,7 +82,7 @@ mlflow==3.5.0
 mlflow-skinny==3.5.0
 mlflow-tracing==3.5.0
 more-itertools==10.8.0
-numpy==2.3.4
+numpy==2.0.2
 oauthlib==3.3.1
 openapi-core==0.19.5
 openapi-pydantic==0.5.1
