@@ -16,9 +16,20 @@ DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
 DATA_RAW = PROJECT_ROOT / "data" / "raw"
 IMAGE_DIR = DATA_RAW / "images" / "image_train"
 
+# --- Input file ---
 INPUT_FILE = DATA_INTERIM / "merged_train.csv"
+
+# --- Output files ---
 OUTPUT_FILE = DATA_PROCESSED / "train_features.csv"
 IMAGE_FEATURES_FILE = DATA_PROCESSED / "image_features.npy"
+
+# train_features.csv head:
+# productid,imageid,designation_clean,description_clean,designation_len,description_len,has_description,prdtypecode
+# 3804725264,1263597046,olivia personalisiertes notizbuch 150 seiten punktraster ca din a5 rosen design,,79,0,0,10
+# image_features.npy is an numpy array that contains 1280-dimensional feature vector per image 
+
+
+
 
 def clean_text(text):
     if pd.isna(text):

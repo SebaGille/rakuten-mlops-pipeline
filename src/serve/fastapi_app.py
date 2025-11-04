@@ -127,6 +127,7 @@ def predict(product: ProductInput):
             "designation": product.designation,
             "description": product.description,
             "predicted_prdtypecode": pred,
+            "predicted_class": pred,  # Add for consistency with frontend
         }])
         # write header only if file does not exist
         header = not INFERENCE_LOG.exists()
@@ -137,4 +138,7 @@ def predict(product: ProductInput):
         # soft-fail logging (n'interrompt pas la prédiction)
         print(f"[warn] failed to append inference log: {e}")
 
-    return {"predicted_prdtypecode": pred}
+    return {
+        "predicted_prdtypecode": pred,  # Keep for backward compatibility
+        "predicted_class": pred         # Add for frontend consistency
+    }

@@ -3,6 +3,7 @@ version: "3.9"
 services:
   postgres:
     image: postgres:15
+    container_name: sep25_cmlops_rakuten-postgres-1
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -12,14 +13,21 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   mlflow:
     build:
       context: .
       dockerfile: Dockerfile.mlflow
+    container_name: sep25_cmlops_rakuten-mlflow-1
     restart: always
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       BACKEND_STORE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       # S3 Configuration
@@ -36,13 +44,20 @@ services:
       --host 0.0.0.0
       --port 5000
       --allowed-hosts '*'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   rakuten_api:
     build:
       context: .
       dockerfile: Dockerfile.api
+    container_name: sep25_cmlops_rakuten-rakuten_api-1
     depends_on:
-      - mlflow
+      mlflow:
+        condition: service_healthy
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       MODEL_NAME: rakuten-baseline
@@ -56,6 +71,11 @@ services:
       - "8000:8000"
     volumes:
       - ./data/monitoring:/app/data/monitoring
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
 volumes:
   postgres_data:

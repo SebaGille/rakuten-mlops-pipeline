@@ -14,7 +14,12 @@ X_TEST_PATH = DATA_RAW / "X_test.csv"
 IMAGE_DIR = DATA_RAW / "images" / "image_train"
 
 # --- Output file ---
-MERGED_TRAIN_PATH = DATA_INTERIM / "merged_train.csv"
+MERGED_TRAIN_PATH = DATA_INTERIM / "merged_train.csv"     
+
+# merged_train.csv head:
+# Unnamed: 0,designation,description,productid,imageid,prdtypecode
+# 0,Olivia: Personalisiertes Notizbuch / 150 Seiten / Punktraster / Ca Din A5 / Rosen-Design,,3804725264,1263597046,10
+
 
 def load_data():
     print("Loading CSV files...")

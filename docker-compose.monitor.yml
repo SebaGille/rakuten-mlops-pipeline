@@ -1,6 +1,7 @@
 services:
   prometheus:
     image: prom/prometheus:v2.55.0
+    container_name: sep25_cmlops_rakuten-prometheus-1
     restart: unless-stopped
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -9,9 +10,15 @@ services:
       - "9090:9090"
     networks:
       - default
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   grafana:
     image: grafana/grafana:11.3.0
+    container_name: sep25_cmlops_rakuten-grafana-1
     restart: unless-stopped
     environment:
       - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
@@ -26,6 +33,11 @@ services:
       - ./grafana/dashboards/dashboard.json:/etc/grafana/provisioning/dashboards/rakuten-api.json:ro
     networks:
       - default
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
 volumes:
   prometheus_data:

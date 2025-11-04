@@ -1,4 +1,5 @@
 [core]
     remote = dagshub
+    check_update = false
 ['remote "dagshub"']
     url = https://dagshub.com/SebaGille/rakuten-mlops.dvc

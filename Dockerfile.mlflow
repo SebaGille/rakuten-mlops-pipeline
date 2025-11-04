@@ -1,7 +1,8 @@
 FROM ghcr.io/mlflow/mlflow:v3.5.0
 
-# Install PostgreSQL client library and AWS S3 support
+# Install PostgreSQL client library, AWS S3 support, and curl for healthcheck
 USER root
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir psycopg2-binary boto3
 
 # Switch back to default user if needed

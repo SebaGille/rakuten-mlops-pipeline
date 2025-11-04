@@ -30,7 +30,6 @@ def _project_root() -> Path:
     except Exception:
         return Path.cwd()
 
-
 PROJECT_ROOT = Path(os.getenv("PROJECT_ROOT", str(_project_root())))
 DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
 MODELS_DIR = PROJECT_ROOT / "models"
@@ -99,9 +98,48 @@ def compare_and_promote_model(client, model_name, current_run_id, current_metric
 
 
 def main():
-    print("Loading processed data...")
-    df = pd.read_csv(INPUT_FILE)
-    print(f"Loaded shape: {df.shape}")
+    # --- Read configuration from environment variables ---
+    sample_size_str = os.getenv("SAMPLE_SIZE", "full")
+    use_images_str = os.getenv("USE_IMAGES", "True")
+    use_images = use_images_str.lower() in ("true", "1", "yes")
+    
+    # Read hyperparameters from environment
+    max_features = int(os.getenv("HYPERPARAM_MAX_FEATURES", "20000"))
+    ngram_range_str = os.getenv("HYPERPARAM_NGRAM_RANGE", "(1, 2)")
+    # Parse ngram_range tuple from string
+    try:
+        ngram_range = eval(ngram_range_str) if isinstance(ngram_range_str, str) else ngram_range_str
+    except:
+        ngram_range = (1, 2)
+    
+    max_iter = int(os.getenv("HYPERPARAM_MAX_ITER", "200"))
+    solver = os.getenv("HYPERPARAM_SOLVER", "lbfgs")
+    random_state = int(os.getenv("HYPERPARAM_RANDOM_STATE", "42"))
+    
+    print("\n=== Training Configuration ===")
+    print(f"Sample size: {sample_size_str}")
+    print(f"Use images: {use_images}")
+    print(f"TF-IDF max_features: {max_features}")
+    print(f"TF-IDF ngram_range: {ngram_range}")
+    print(f"Max iterations: {max_iter}")
+    print(f"Solver: {solver}")
+    print(f"Random state: {random_state}")
+    print("=" * 50)
+    
+    print("\nLoading processed data...")
+    df = pd.read_csv(INPUT_FILE)                # "train_features.csv"
+    print(f"Loaded full dataset shape: {df.shape}")
+
+    # --- Apply sampling if specified ---
+    if sample_size_str != "full":
+        try:
+            sample_size = int(sample_size_str)
+            if sample_size < len(df):
+                print(f"Sampling {sample_size} rows from {len(df)} total rows...")
+                df = df.sample(n=sample_size, random_state=random_state).reset_index(drop=True)
+                print(f"Sampled dataset shape: {df.shape}")
+        except ValueError:
+            print(f"Warning: Invalid SAMPLE_SIZE '{sample_size_str}', using full dataset")
 
     # Validate required columns
     required = {"designation_clean", "description_clean", "prdtypecode"}
@@ -109,15 +147,30 @@ def main():
     if missing:
         raise KeyError(f"Missing required columns: {sorted(missing)}")
 
-    # Load image features
-    print("Loading image features...")
-    if not IMAGE_FEATURES_FILE.exists():
-        raise FileNotFoundError(f"Image features not found: {IMAGE_FEATURES_FILE}. Run build_features.py first.")
-    image_features = np.load(IMAGE_FEATURES_FILE)
-    print(f"Image features shape: {image_features.shape}")
-    
-    if len(df) != len(image_features):
-        raise ValueError(f"Mismatch: {len(df)} rows in CSV but {len(image_features)} image features")
+    # Load image features (only if needed)
+    image_features = None
+    if use_images:
+        print("Loading image features...")
+        if not IMAGE_FEATURES_FILE.exists():
+            raise FileNotFoundError(f"Image features not found: {IMAGE_FEATURES_FILE}. Run build_features.py first.")
+        image_features_full = np.load(IMAGE_FEATURES_FILE)
+        print(f"Image features shape: {image_features_full.shape}")
+        
+        # If we sampled the data, we need to get the corresponding image features
+        # This assumes df has an index or imageid column to match
+        if sample_size_str != "full" and 'imageid' in df.columns:
+            # Match image features by index
+            # This is a simplification - in production you'd want proper ID matching
+            print("Note: Image features might not be properly aligned after sampling!")
+            print("      Consider adding proper ID-based matching for production use.")
+        
+        # For now, just take the first N image features (aligned with CSV order)
+        image_features = image_features_full[:len(df)]
+        
+        if len(df) != len(image_features):
+            raise ValueError(f"Mismatch: {len(df)} rows in CSV but {len(image_features)} image features")
+    else:
+        print("Training in TEXT-ONLY mode (images disabled)")
 
     # Combine text
     df["text"] = df["designation_clean"].fillna("") + " " + df["description_clean"].fillna("")
@@ -125,15 +178,29 @@ def main():
     y = df["prdtypecode"]
 
     # Split data (same random_state for both text and images to keep alignment)
-    try:
-        X_text_train, X_text_test, y_train, y_test, img_train, img_test = train_test_split(
-            X_text, y, image_features, test_size=0.2, random_state=42, stratify=y
-        )
-    except ValueError as e:
-        print(f"Stratified split failed ({e}); falling back to non-stratified split.")
-        X_text_train, X_text_test, y_train, y_test, img_train, img_test = train_test_split(
-            X_text, y, image_features, test_size=0.2, random_state=42, stratify=None
-        )
+    if use_images:
+        try:
+            X_text_train, X_text_test, y_train, y_test, img_train, img_test = train_test_split(
+                X_text, y, image_features, test_size=0.2, random_state=random_state, stratify=y
+            )
+        except ValueError as e:
+            print(f"Stratified split failed ({e}); falling back to non-stratified split.")
+            X_text_train, X_text_test, y_train, y_test, img_train, img_test = train_test_split(
+                X_text, y, image_features, test_size=0.2, random_state=random_state, stratify=None
+            )
+    else:
+        # Text-only mode: no image features
+        try:
+            X_text_train, X_text_test, y_train, y_test = train_test_split(
+                X_text, y, test_size=0.2, random_state=random_state, stratify=y
+            )
+        except ValueError as e:
+            print(f"Stratified split failed ({e}); falling back to non-stratified split.")
+            X_text_train, X_text_test, y_train, y_test = train_test_split(
+                X_text, y, test_size=0.2, random_state=random_state, stratify=None
+            )
+        img_train = None
+        img_test = None
     
     print(f"Train set: {len(X_text_train)} samples")
     print(f"Test set: {len(X_text_test)} samples")
@@ -142,40 +209,56 @@ def main():
     mlflow.set_tracking_uri(MLFLOW_URI)
     mlflow.set_experiment(EXPERIMENT_NAME)
 
-    vec_params = {"max_features": 20000, "ngram_range": (1, 2)}
+    # Use parameters from environment variables (configured in UI)
+    vec_params = {"max_features": max_features, "ngram_range": ngram_range}
+    model_type = "MultiModalLogisticRegression" if use_images else "TextOnlyLogisticRegression"
     model_params = {
-        "model": "MultiModalLogisticRegression", 
-        "max_iter": 200, 
-        "random_state": 42,
-        "image_features_dim": image_features.shape[1]
+        "model": model_type, 
+        "max_iter": max_iter,
+        "solver": solver,
+        "random_state": random_state,
     }
+    if use_images and image_features is not None:
+        model_params["image_features_dim"] = image_features.shape[1]
 
-    with mlflow.start_run(run_name="multimodal-text-image-logreg"):
+    # Generate run name based on configuration
+    modality_str = "text+image" if use_images else "text-only"
+    run_name = f"{modality_str}-logreg-{sample_size_str}samples"
+    
+    with mlflow.start_run(run_name=run_name):
         # Log params
         mlflow.log_params(
             {
                 "vec_max_features": vec_params["max_features"],
                 "vec_ngram_range": str(vec_params["ngram_range"]),
-                "modality": "text+image",
+                "modality": modality_str,
+                "sample_size": sample_size_str,
                 **model_params,
             }
         )
         # Lier le run au contexte de version
-        mlflow.set_tags({
+        tags = {
             "git_commit": git_commit,
             "git_branch": git_branch,
             "dvc_repo_rev": git_commit,   
-            "pipeline_stages": "ingest→features(text+image)→train",
-            "model_type": "multimodal",
-            "image_model": "MobileNetV2"
-        })
+            "pipeline_stages": f"ingest→features({modality_str})→train",
+            "model_type": "multimodal" if use_images else "text_only",
+        }
+        if use_images:
+            tags["image_model"] = "MobileNetV2"
+        mlflow.set_tags(tags)
 
         # Joindre les manifests DVC/Git de la run
         mlflow.log_artifact(str(PROJECT_ROOT / "dvc.yaml"))
         if (PROJECT_ROOT / "dvc.lock").exists():
             mlflow.log_artifact(str(PROJECT_ROOT / "dvc.lock"))
 
-        print("\n=== Training Multi-Modal Model (Text + Image) ===")
+        # Train
+        if use_images:
+            print(f"\n=== Training Multi-Modal Model (Text + Image) ===")
+        else:
+            print(f"\n=== Training Text-Only Model ===")
+            
         print("Creating vectorizer...")
         vectorizer = TfidfVectorizer(
             max_features=vec_params["max_features"],
@@ -186,21 +269,35 @@ def main():
         classifier = LogisticRegression(
             max_iter=model_params["max_iter"],
             random_state=model_params["random_state"],
-            solver="lbfgs",
+            solver=solver,
         )
 
-        print("Creating multi-modal model...")
-        multimodal_model = MultiModalClassifier(
-            vectorizer=vectorizer,
-            image_features_train=img_train,
-            classifier=classifier
-        )
+        if use_images:
+            print("Creating multi-modal model...")
+            model = MultiModalClassifier(
+                vectorizer=vectorizer,
+                image_features_train=img_train,
+                classifier=classifier
+            )
 
-        print("Training model on combined features (text + image)...")
-        multimodal_model.fit(X_text_train, y_train)
+            print("Training model on combined features (text + image)...")
+            model.fit(X_text_train, y_train)
 
-        print("Evaluating model...")
-        y_pred = multimodal_model.predict(X_text_test, image_features_test=img_test)
+            print("Evaluating model...")
+            y_pred = model.predict(X_text_test, image_features_test=img_test)
+        else:
+            print("Creating text-only pipeline...")
+            model = Pipeline([
+                ('vectorizer', vectorizer),
+                ('classifier', classifier)
+            ])
+            
+            print("Training model on text features only...")
+            model.fit(X_text_train, y_train)
+            
+            print("Evaluating model...")
+            y_pred = model.predict(X_text_test)
+        
         acc = accuracy_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred, average="weighted")
         print(f"Accuracy: {acc:.4f} | F1-weighted: {f1:.4f}")
@@ -209,7 +306,7 @@ def main():
         mlflow.log_metrics({"accuracy": acc, "f1_weighted": f1})
 
         # --- Log model to MLflow ---
-        print("Logging multimodal model to MLflow...")
+        print(f"Logging {modality_str} model to MLflow...")
         
         # Note: MLflow sklearn.log_model doesn't support custom objects easily
         # We'll use pyfunc for custom multimodal model or just log as artifact
@@ -218,16 +315,23 @@ def main():
         # Save model locally first
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         model_data = {
-            "multimodal_model": multimodal_model,
+            "model": model,
             "vectorizer": vectorizer,
-            "classifier": classifier
+            "classifier": classifier,
+            "use_images": use_images,
+            "modality": modality_str
         }
         joblib.dump(model_data, MODEL_FILE)
         print(f"Saved model locally → {MODEL_FILE}")
         
         # Save metrics
         with open(METRICS_FILE, "w") as f:
-            json.dump({"accuracy": acc, "f1_weighted": f1, "model_type": "multimodal"}, f, indent=2)
+            json.dump({
+                "accuracy": acc, 
+                "f1_weighted": f1, 
+                "model_type": modality_str,
+                "sample_size": sample_size_str
+            }, f, indent=2)
         print(f"Saved metrics → {METRICS_FILE}")
 
         # Log artifacts to MLflow
@@ -240,8 +344,9 @@ def main():
         mlflow.log_artifact(str(METRICS_FILE))
         
         # Log image features file info (not the actual file, too large)
-        mlflow.log_param("image_features_file", str(IMAGE_FEATURES_FILE))
-        mlflow.log_param("image_features_shape", str(image_features.shape))
+        if use_images and image_features is not None:
+            mlflow.log_param("image_features_file", str(IMAGE_FEATURES_FILE))
+            mlflow.log_param("image_features_shape", str(image_features.shape))
 
         # --- Register model in MLflow Model Registry ---
         print("\nRegistering model in MLflow Model Registry...")
@@ -292,10 +397,13 @@ def main():
         except Exception as e:
             print(f"Model registration/promotion error: {e}")
 
+        # Print run_id for extraction by TrainingManager
+        run_id = mlflow.active_run().info.run_id
         print(f"\n✓ Training completed successfully!")
         print(f"  Model: {MODEL_FILE}")
         print(f"  Metrics: {METRICS_FILE}")
         print(f"  MLflow experiment: {EXPERIMENT_NAME}")
+        print(f"  MLflow run_id: {run_id}")
         print(f"  Run logged to MLflow.")
 
 

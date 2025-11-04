@@ -12,6 +12,30 @@ A complete MLOps pipeline for Rakuten product classification (text + images) wit
 - **Prefect** (orchestration) — installed
 - **Prometheus** + **Grafana** + **Evidently** (monitoring & drift detection) — ✅ implemented
 - **CI/CD**: GitHub Actions — ✅ implemented
+- **Streamlit** (interactive showcase UI) — ✅ **NEW!**
+
+## 🎯 Interactive Streamlit Showcase — **NEW!**
+
+> 🚀 **Try the interactive demo!** A complete Streamlit application that showcases ML Engineering + Product Management skills.
+
+### Features:
+- 🐳 **Infrastructure Management**: Real-time Docker service monitoring and control
+- 🎯 **Interactive Training**: Configure hyperparameters, train models, track experiments
+- 🔮 **Live Predictions**: Upload images, enter text, get real-time predictions
+- 📊 **Monitoring Dashboard**: Drift detection, performance tracking, system metrics
+
+### Quick Start:
+```bash
+# Install Streamlit dependencies
+pip install -r requirements-streamlit.txt
+
+# Launch the showcase
+streamlit run streamlit_app/app.py
+```
+
+📖 **Full Documentation**: See [STREAMLIT_README.md](STREAMLIT_README.md) and [QUICKSTART_STREAMLIT.md](QUICKSTART_STREAMLIT.md)
+
+---
 
 ## 📦 Data Structure
 ```
