@@ -231,7 +231,20 @@ Otherwise, it becomes a **Challenger** for future comparison.
 """)
 
 # Get experiments
-experiments = mlflow_manager.get_experiments()
+experiments, error_msg = mlflow_manager.get_experiments()
+
+# Show error if experiments retrieval failed
+if error_msg:
+    st.error(f"⚠️ Failed to retrieve experiments: {error_msg}")
+    st.info(f"Tracking URI: `{MLFLOW_TRACKING_URI}`")
+    st.info("💡 **Troubleshooting:**")
+    st.info("""
+    1. Check if MLflow server is running and accessible
+    2. Verify MLFLOW_TRACKING_URI is correct
+    3. For AWS: Ensure MLFLOW_HOST is set correctly for host-based routing
+    4. Check network connectivity and firewall settings
+    """)
+    st.stop()
 
 if experiments:
     # Filter non-default experiments

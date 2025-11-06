@@ -33,7 +33,7 @@ def _configure_mlflow_host_header(tracking_uri: str, mlflow_host: str):
         print(f"Warning: Failed to configure Host header: {e}")
         return False
 
-def test_mlflow_connection(tracking_uri: str, mlflow_host: str = None):
+def check_mlflow_connection(tracking_uri: str, mlflow_host: str = None):
     """Test MLflow connection and fetch experiments/runs"""
     print("=" * 70)
     print("Testing MLflow Connection")
@@ -155,6 +155,6 @@ if __name__ == "__main__":
     else:
         mlflow_host = os.getenv("MLFLOW_HOST", None)
     
-    success = test_mlflow_connection(tracking_uri, mlflow_host)
+    success = check_mlflow_connection(tracking_uri, mlflow_host)
     sys.exit(0 if success else 1)
 

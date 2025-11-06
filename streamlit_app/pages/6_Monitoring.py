@@ -427,8 +427,10 @@ with tab3:
                         st.markdown("---")
         
         # Get experiment history
-        experiments = mlflow_manager.get_experiments()
-        if experiments:
+        experiments, error_msg = mlflow_manager.get_experiments()
+        if error_msg:
+            st.warning(f"⚠️ Failed to retrieve experiments: {error_msg}")
+        elif experiments:
             exp_names = [e['name'] for e in experiments if not e['name'].startswith('Default')]
             if exp_names:
                 selected_exp = st.selectbox("Select experiment:", exp_names, index=0)

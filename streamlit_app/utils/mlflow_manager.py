@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 from mlflow.tracking import MlflowClient
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 import os
+import logging
 
 
 class MLflowManager:
@@ -40,10 +41,15 @@ class MLflowManager:
             import requests
             from functools import wraps
             
-            # Store original request method
-            original_request = requests.Session.request
+            # Store original request method if not already stored
+            if not hasattr(requests.Session, '_original_request'):
+                requests.Session._original_request = requests.Session.request
+            
             tracking_uri = self.tracking_uri
             mlflow_host = self.mlflow_host
+            
+            # Get the original request method
+            original_request = requests.Session._original_request
             
             @wraps(original_request)
             def request_with_host_header(session_self, method, url, *args, **kwargs):
@@ -51,27 +57,48 @@ class MLflowManager:
                 if tracking_uri and url.startswith(tracking_uri):
                     if 'headers' not in kwargs:
                         kwargs['headers'] = {}
-                    kwargs['headers']['Host'] = mlflow_host
+                    # Only add Host header if not already set
+                    if 'Host' not in kwargs['headers']:
+                        kwargs['headers']['Host'] = mlflow_host
+                        print(f"[MLflowManager] Added Host header: {mlflow_host} for URL: {url}")
                 return original_request(session_self, method, url, *args, **kwargs)
             
             # Patch the Session class
             requests.Session.request = request_with_host_header
+            print(f"[MLflowManager] Configured host-based routing: {tracking_uri} -> Host: {mlflow_host}")
         except Exception as e:
-            print(f"Warning: Failed to configure Host header: {e}")
+            print(f"[MLflowManager] Warning: Failed to configure Host header: {e}")
+            import traceback
+            traceback.print_exc()
     
     @property
     def client(self) -> MlflowClient:
         """Lazy initialization of MLflow client to avoid hanging during __init__"""
         if self._client is None:
+            # Ensure host-based routing is configured before creating client
+            # Re-apply the patch in case it was overwritten
+            self._configure_mlflow_host_header()
+            
+            # Debug: Log client initialization
+            print(f"[MLflowManager] Initializing MLflowClient with tracking_uri: {self.tracking_uri}")
+            print(f"[MLflowManager] Host header will be: {self.mlflow_host}")
+            
             # Initialize client with timeout protection
             try:
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(MlflowClient, self.tracking_uri)
                     self._client = future.result(timeout=3)  # 3 second timeout for initialization
+                print(f"[MLflowManager] MLflowClient initialized successfully")
             except FutureTimeoutError:
-                raise TimeoutError(f"MLflow client initialization timed out after 3 seconds for {self.tracking_uri}")
+                error_msg = f"MLflow client initialization timed out after 3 seconds for {self.tracking_uri}"
+                print(f"[MLflowManager] {error_msg}")
+                raise TimeoutError(error_msg)
             except Exception as e:
-                raise RuntimeError(f"Failed to initialize MLflow client: {e}")
+                error_msg = f"Failed to initialize MLflow client: {e}"
+                print(f"[MLflowManager] {error_msg}")
+                import traceback
+                traceback.print_exc()
+                raise RuntimeError(error_msg)
         return self._client
     
     def _check_mlflow_client_with_timeout(self, timeout_seconds: int = 5) -> Tuple[bool, Optional[Exception]]:
@@ -154,10 +181,22 @@ class MLflowManager:
             print(f"MLflow connectivity check exception for {self.tracking_uri}: {e}")
             return False
     
-    def get_experiments(self) -> List[Dict]:
-        """Get all experiments"""
+    def get_experiments(self) -> Tuple[List[Dict], Optional[str]]:
+        """
+        Get all experiments
+        
+        Returns:
+            tuple: (experiments_list, error_message)
+            - experiments_list: List of experiment dictionaries
+            - error_message: Error message if failed, None if successful
+        """
         try:
+            # Debug: Log tracking URI and host being used
+            print(f"[MLflowManager] Getting experiments from: {self.tracking_uri}")
+            print(f"[MLflowManager] Using Host header: {self.mlflow_host}")
+            
             experiments = self.client.search_experiments()
+            print(f"[MLflowManager] Successfully retrieved {len(experiments)} experiments")
             return [
                 {
                     'experiment_id': exp.experiment_id,
@@ -166,10 +205,13 @@ class MLflowManager:
                     'lifecycle_stage': exp.lifecycle_stage
                 }
                 for exp in experiments
-            ]
+            ], None
         except Exception as e:
-            print(f"Error getting experiments: {e}")
-            return []
+            error_msg = f"Error getting experiments from {self.tracking_uri}: {e}"
+            print(f"[MLflowManager] {error_msg}")
+            import traceback
+            traceback.print_exc()
+            return [], error_msg
     
     def get_runs(self, experiment_id: str, max_results: int = 10) -> pd.DataFrame:
         """Get runs for a specific experiment"""
