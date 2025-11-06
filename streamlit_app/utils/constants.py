@@ -54,17 +54,19 @@ def _alb_prefixed(path: str) -> str:
 
 
 # Service URLs (override via environment variables for cloud mode)
-# MLFLOW_TRACKING_URI: Tracking URI for MLflow client (includes /mlflow path for ALB path-based routing)
-# MLFLOW_URL: Full URL for UI links (same as tracking URI, includes /mlflow path prefix)
-# Note: When using ALB path-based routing, MLflow client needs the path-prefixed URL
-# because ALB routes /mlflow/* to the MLflow service
+# MLFLOW_TRACKING_URI: Tracking URI for MLflow client (uses host-based routing)
+# MLFLOW_URL: Full URL for UI links (same as tracking URI)
+# Note: ALB is configured for host-based routing using mlflow.rakuten.dev or mlflow.rakuten.local
+# When AWS_ALB_URL is set, we use the ALB URL with Host header for host-based routing
+MLFLOW_HOST = os.getenv("MLFLOW_HOST", "mlflow.rakuten.dev")
+# Use ALB URL directly since hostname might not resolve, but set Host header for routing
 MLFLOW_TRACKING_URI = os.getenv(
     "MLFLOW_TRACKING_URI",
-    _alb_prefixed("mlflow") if AWS_ALB_URL else "http://localhost:5000",
+    AWS_ALB_URL.rstrip("/") if AWS_ALB_URL else "http://localhost:5000",
 )
 MLFLOW_URL = os.getenv(
     "MLFLOW_URL",
-    _alb_prefixed("mlflow") if AWS_ALB_URL else "http://localhost:5000",
+    AWS_ALB_URL.rstrip("/") if AWS_ALB_URL else "http://localhost:5000",
 )
 API_URL = os.getenv(
     "API_URL",

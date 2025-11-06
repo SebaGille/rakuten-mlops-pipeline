@@ -6,6 +6,7 @@ import requests
 from urllib.parse import urljoin
 from mlflow.tracking import MlflowClient
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+import os
 
 
 class MLflowManager:
@@ -13,8 +14,14 @@ class MLflowManager:
     
     def __init__(self, tracking_uri: str):
         self.tracking_uri = tracking_uri.rstrip("/")
-        # Normalize tracking URI - if it's a base ALB URL, we need to add /mlflow path
-        # for path-based routing, but MLflow client handles this automatically
+        # Get MLflow host for host-based routing (if using ALB)
+        self.mlflow_host = os.getenv("MLFLOW_HOST", "mlflow.rakuten.dev")
+        
+        # Configure MLflow to use custom Host header for host-based routing
+        # MLflow uses requests internally, so we need to set the Host header
+        # We'll do this by configuring the requests session used by MLflow
+        self._configure_mlflow_host_header()
+        
         # Set tracking URI (this is non-blocking, just sets a variable)
         try:
             mlflow.set_tracking_uri(self.tracking_uri)
@@ -23,6 +30,34 @@ class MLflowManager:
             print(f"Warning: Failed to set MLflow tracking URI: {e}")
         # Don't initialize client immediately - create it lazily to avoid hanging
         self._client = None
+    
+    def _configure_mlflow_host_header(self):
+        """Configure MLflow to use custom Host header for host-based routing"""
+        # MLflow uses requests internally. We need to patch the requests library
+        # to add the Host header when making requests to the tracking URI
+        # This is done by monkey-patching the requests.Session class
+        try:
+            import requests
+            from functools import wraps
+            
+            # Store original request method
+            original_request = requests.Session.request
+            tracking_uri = self.tracking_uri
+            mlflow_host = self.mlflow_host
+            
+            @wraps(original_request)
+            def request_with_host_header(session_self, method, url, *args, **kwargs):
+                # If the URL matches our tracking URI, add Host header
+                if tracking_uri and url.startswith(tracking_uri):
+                    if 'headers' not in kwargs:
+                        kwargs['headers'] = {}
+                    kwargs['headers']['Host'] = mlflow_host
+                return original_request(session_self, method, url, *args, **kwargs)
+            
+            # Patch the Session class
+            requests.Session.request = request_with_host_header
+        except Exception as e:
+            print(f"Warning: Failed to configure Host header: {e}")
     
     @property
     def client(self) -> MlflowClient:
@@ -69,6 +104,12 @@ class MLflowManager:
         # First try a quick HTTP health check (fast, has timeout)
         base_url = self.tracking_uri.rstrip("/")
         
+        # Prepare headers for host-based routing
+        headers = {}
+        if self.mlflow_host and (base_url.startswith("http://") or base_url.startswith("https://")):
+            # If using ALB URL, add Host header for host-based routing
+            headers['Host'] = self.mlflow_host
+        
         # Try different health check endpoints
         health_urls = [
             urljoin(base_url + "/", "health"),
@@ -80,7 +121,7 @@ class MLflowManager:
         http_success = False
         for url in health_urls:
             try:
-                response = requests.get(url, timeout=3, allow_redirects=True)
+                response = requests.get(url, timeout=3, allow_redirects=True, headers=headers)
                 if response.status_code < 400:
                     http_success = True
                     break
