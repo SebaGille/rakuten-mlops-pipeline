@@ -3,7 +3,6 @@ import os
 from pathlib import Path
 import subprocess
 
-import boto3
 import joblib
 import mlflow
 import mlflow.sklearn
