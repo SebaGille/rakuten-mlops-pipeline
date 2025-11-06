@@ -37,7 +37,8 @@ st.markdown("Configure, train, and compare ML models with full experiment tracki
 st.markdown("---")
 
 # Check MLflow connection
-mlflow_connected = mlflow_manager.check_connection()
+with st.spinner("Checking MLflow connection..."):
+    mlflow_connected = mlflow_manager.check_connection()
 if not mlflow_connected:
     st.error("MLflow server is not accessible. Please start the infrastructure first (Infrastructure page).")
     st.stop()

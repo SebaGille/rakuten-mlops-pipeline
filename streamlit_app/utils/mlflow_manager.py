@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 import requests
 from urllib.parse import urljoin
 from mlflow.tracking import MlflowClient
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 
 class MLflowManager:
@@ -17,15 +18,7 @@ class MLflowManager:
     
     def check_connection(self) -> bool:
         """Check if MLflow server is accessible"""
-        # First try the official MLflow client API; this works even when the UI
-        # is served behind a path prefix (e.g. ALB forwarding /mlflow → service).
-        try:
-            self.client.search_experiments(max_results=1)
-            return True
-        except Exception as client_error:
-            last_error = client_error
-        
-        # Fallback to simple HTTP checks on common endpoints.
+        # First try a quick HTTP health check (fast, has timeout)
         base_url = self.tracking_uri.rstrip("/")
         urls_to_try = [
             urljoin(base_url + "/", "health"),
@@ -35,14 +28,30 @@ class MLflowManager:
         
         for url in urls_to_try:
             try:
-                response = requests.get(url, timeout=5, allow_redirects=True)
+                response = requests.get(url, timeout=3, allow_redirects=True)
                 if response.status_code < 400:
-                    return True
-            except requests.RequestException as http_error:
-                last_error = http_error
+                    # HTTP check succeeded, now try MLflow client API with timeout
+                    try:
+                        with ThreadPoolExecutor(max_workers=1) as executor:
+                            future = executor.submit(self.client.search_experiments, max_results=1)
+                            future.result(timeout=5)  # 5 second timeout
+                        return True
+                    except (FutureTimeoutError, Exception) as client_error:
+                        # Client API failed or timed out, but HTTP worked, so server is up
+                        print(f"MLflow client API check failed (but HTTP succeeded): {client_error}")
+                        return True  # Server is accessible even if client API has issues
+            except requests.RequestException:
+                continue
         
-        print(f"MLflow connectivity check failed for {self.tracking_uri}: {last_error}")
-        return False
+        # If HTTP checks failed, try MLflow client API as last resort (with timeout)
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(self.client.search_experiments, max_results=1)
+                future.result(timeout=5)  # 5 second timeout
+            return True
+        except (FutureTimeoutError, Exception) as last_error:
+            print(f"MLflow connectivity check failed for {self.tracking_uri}: {last_error}")
+            return False
     
     def get_experiments(self) -> List[Dict]:
         """Get all experiments"""
