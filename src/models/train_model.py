@@ -294,7 +294,21 @@ def main():
         
         # Try to verify connection by creating/getting experiment
         from mlflow.tracking import MlflowClient
+        from mlflow.exceptions import RestException, MlflowException
         client = MlflowClient(tracking_uri=MLFLOW_URI)
+        
+        # First, try to list all available experiments for diagnostics
+        try:
+            all_experiments = client.search_experiments(max_results=100)
+            print(f"\n=== Available Experiments in MLflow ===")
+            if all_experiments:
+                for exp in all_experiments:
+                    print(f"  - {exp.name} (ID: {exp.experiment_id})")
+            else:
+                print("  No experiments found in this MLflow instance.")
+            print(f"=== Looking for experiment: '{EXPERIMENT_NAME}' ===\n")
+        except Exception as list_error:
+            print(f"Warning: Could not list experiments: {list_error}")
         
         # Try to get or create experiment
         try:
@@ -305,16 +319,56 @@ def main():
                 print(f"Created experiment '{EXPERIMENT_NAME}' with ID: {experiment_id}")
             else:
                 print(f"Found experiment '{EXPERIMENT_NAME}' with ID: {experiment.experiment_id}")
+        except RestException as e:
+            # Check if it's a "Not Found" error (experiment doesn't exist)
+            # RestException for non-existent experiment typically has "Not Found" in the message
+            error_str = str(e).lower()
+            # Check if the error indicates the experiment doesn't exist
+            is_not_found = (
+                "not found" in error_str or
+                ("detail" in error_str and "not found" in error_str) or
+                (hasattr(e, 'response') and hasattr(e.response, 'text') and 
+                 "not found" in e.response.text.lower())
+            )
+            
+            if is_not_found:
+                print(f"\n⚠️  Experiment '{EXPERIMENT_NAME}' not found in this MLflow instance.")
+                print(f"   This could mean:")
+                print(f"   1. The experiment was created in a different MLflow instance")
+                print(f"   2. The MLflow tracking URI points to a different backend store")
+                print(f"   3. The experiment name is different")
+                print(f"\n   Creating new experiment '{EXPERIMENT_NAME}'...")
+                try:
+                    experiment_id = client.create_experiment(EXPERIMENT_NAME)
+                    print(f"✓ Created experiment '{EXPERIMENT_NAME}' with ID: {experiment_id}")
+                except Exception as create_error:
+                    print(f"✗ Error: Failed to create experiment: {create_error}")
+                    raise RuntimeError(f"MLflow experiment creation failed: {create_error}")
+            else:
+                # Other RestException (connection issue, etc.)
+                print(f"Error: MLflow REST API error: {e}")
+                raise RuntimeError(f"MLflow connection failed: {e}")
+        except MlflowException as e:
+            # Other MLflow exceptions
+            print(f"Error: MLflow error: {e}")
+            raise RuntimeError(f"MLflow connection failed: {e}")
         except Exception as e:
-            print(f"Warning: Could not get/create experiment: {e}")
-            print("Attempting to continue with mlflow.set_experiment()...")
+            # Generic exception - try to create experiment anyway
+            print(f"Warning: Unexpected error getting experiment: {e}")
+            print(f"Attempting to create experiment '{EXPERIMENT_NAME}'...")
             try:
-                mlflow.set_experiment(EXPERIMENT_NAME)
-            except Exception as e2:
-                print(f"Error: Failed to set experiment: {e2}")
-                print(f"MLflow server may not be accessible at {MLFLOW_URI}")
-                print("Training will continue but MLflow logging will be disabled.")
-                raise RuntimeError(f"MLflow connection failed: {e2}")
+                experiment_id = client.create_experiment(EXPERIMENT_NAME)
+                print(f"Created experiment '{EXPERIMENT_NAME}' with ID: {experiment_id}")
+            except Exception as create_error:
+                print(f"Error: Failed to create experiment: {create_error}")
+                raise RuntimeError(f"MLflow experiment creation failed: {create_error}")
+        
+        # Set the experiment (this should work now that it exists)
+        try:
+            mlflow.set_experiment(EXPERIMENT_NAME)
+        except Exception as e:
+            print(f"Warning: Failed to set experiment: {e}")
+            # Continue anyway - experiment should exist now
     except Exception as e:
         print(f"Error: Failed to connect to MLflow at {MLFLOW_URI}: {e}")
         print("Training will continue but MLflow logging will be disabled.")
