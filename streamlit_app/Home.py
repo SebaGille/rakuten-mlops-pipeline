@@ -109,8 +109,25 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Helpers
+def _get_secret_value(key: str) -> str:
+    """Safely retrieve a secret value if available."""
+
+    try:
+        value = st.secrets.get(key)  # type: ignore[attr-defined]
+        if isinstance(value, str):
+            return value
+    except Exception:  # pragma: no cover - secrets unavailable locally
+        pass
+    return ""
+
+
 def _detect_deployment_mode() -> str:
     """Return 'cloud' when running on Streamlit Cloud / ALB, else 'local'."""
+
+    # Explicit override via secrets
+    secret_mode = _get_secret_value("deployment_mode") or _get_secret_value("DEPLOYMENT_MODE")
+    if secret_mode.lower() == "cloud":
+        return "cloud"
 
     runtime_env = os.getenv("STREAMLIT_RUNTIME_ENVIRONMENT", "").lower()
     if runtime_env == "cloud":
@@ -131,7 +148,8 @@ def _detect_deployment_mode() -> str:
     if isinstance(browser_host, str) and "streamlit.app" in browser_host.lower():
         return "cloud"
 
-    if AWS_ALB_URL:
+    # Secrets may hold the ALB URL when environment variables are not set
+    if AWS_ALB_URL or _get_secret_value("AWS_ALB_URL"):
         return "cloud"
 
     return "local"
@@ -233,7 +251,8 @@ def main():
     is_cloud = deployment_mode == "cloud"
 
     if is_cloud:
-        alb_display = AWS_ALB_URL or "Set AWS_ALB_URL to surface the load balancer URL"
+        alb_secret = _get_secret_value("AWS_ALB_URL")
+        alb_display = AWS_ALB_URL or alb_secret or "Set AWS_ALB_URL to surface the load balancer URL"
         st.info(f"""
         **AWS Deployment Detected**
         
