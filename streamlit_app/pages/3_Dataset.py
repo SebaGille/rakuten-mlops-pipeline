@@ -4,6 +4,8 @@ from pathlib import Path
 import sys
 import pandas as pd
 import plotly.express as px
+from PIL import Image
+import io
 
 # Add parent directory to path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -119,7 +121,6 @@ if stats:
                 
                 # Display each sample with image
                 st.markdown("---")
-                images_path = PROJECT_ROOT / "data" / "raw" / "images" / "image_train"
                 
                 for idx, row in df_display.iterrows():
                     with st.container():
@@ -129,10 +130,14 @@ if stats:
                             # Try to display image
                             if 'imageid' in row and 'productid' in row:
                                 img_filename = f"image_{int(row['imageid'])}_product_{int(row['productid'])}.jpg"
-                                img_path = images_path / img_filename
                                 
-                                if img_path.exists():
-                                    st.image(str(img_path), use_column_width=True)
+                                # Load image from S3 or local filesystem
+                                image_data = training_manager.load_image(img_filename)
+                                
+                                if image_data:
+                                    # Convert bytes to image
+                                    img = Image.open(io.BytesIO(image_data))
+                                    st.image(img, use_column_width=True)
                                 else:
                                     st.info("📷 Image not found")
                             else:

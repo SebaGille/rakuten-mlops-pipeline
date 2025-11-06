@@ -1,0 +1,27 @@
+# Streamlit Cloud Deployment Dependencies
+# Minimal requirements for cloud deployment (no Docker, no local services)
+
+# Core Streamlit
+streamlit==1.31.0
+streamlit-extras==0.3.6
+
+# Data manipulation and visualization
+pandas>=2.0.0,<3.0.0
+numpy>=1.24.0,<2.1.0
+plotly==5.18.0
+
+# HTTP requests (for API calls if available)
+requests==2.31.0
+
+# AWS S3 integration (for dataset loading on Streamlit Cloud)
+boto3>=1.34.0
+
+# Image processing
+Pillow>=10.0.0
+
+# Lightweight scikit-learn for demo predictions
+scikit-learn>=1.3.0,<1.6.0
+
+# Optional: Lightweight MLflow client (without server components)
+# mlflow-skinny>=2.10.0
+

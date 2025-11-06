@@ -5,6 +5,10 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import subprocess
 import json
+import os
+import io
+import boto3
+from botocore.exceptions import ClientError, NoCredentialsError
 
 
 class TrainingManager:
@@ -15,6 +19,90 @@ class TrainingManager:
         self.data_processed = project_root / "data" / "processed"
         self.data_interim = project_root / "data" / "interim"
         self.data_raw = project_root / "data" / "raw"
+        
+        # S3 Configuration (for Streamlit Cloud / AWS deployment)
+        # Try Streamlit secrets first (for Streamlit Cloud), then environment variables
+        try:
+            import streamlit as st
+            # Streamlit secrets are available when running in Streamlit
+            self.s3_bucket = st.secrets.get("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
+            self.s3_prefix = st.secrets.get("S3_DATA_PREFIX", os.getenv("S3_DATA_PREFIX", "data/"))
+            aws_access_key = st.secrets.get("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID"))
+            aws_secret_key = st.secrets.get("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY"))
+            aws_region = st.secrets.get("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
+        except (ImportError, AttributeError, KeyError):
+            # Fallback to environment variables if Streamlit is not available
+            self.s3_bucket = os.getenv("S3_DATA_BUCKET", "")
+            self.s3_prefix = os.getenv("S3_DATA_PREFIX", "data/")
+            aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+            aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+            aws_region = os.getenv("AWS_DEFAULT_REGION", "eu-west-1")
+        
+        self.use_s3 = bool(self.s3_bucket)
+        
+        # Initialize S3 client if bucket is configured
+        self.s3_client = None
+        if self.use_s3:
+            try:
+                # Try to get credentials from environment or Streamlit secrets
+                # Streamlit Cloud uses secrets.toml for credentials
+                self.s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=aws_access_key,
+                    aws_secret_access_key=aws_secret_key,
+                    region_name=aws_region
+                )
+                # Test S3 connection
+                try:
+                    self.s3_client.head_bucket(Bucket=self.s3_bucket)
+                except (ClientError, NoCredentialsError) as e:
+                    print(f"S3 bucket access failed: {e}. Falling back to local files.")
+                    self.use_s3 = False
+                    self.s3_client = None
+            except Exception as e:
+                print(f"S3 initialization failed: {e}. Falling back to local files.")
+                self.use_s3 = False
+                self.s3_client = None
+    
+    def _load_from_s3(self, s3_key: str) -> Optional[pd.DataFrame]:
+        """Load a CSV file from S3"""
+        if not self.use_s3 or not self.s3_client:
+            return None
+        
+        try:
+            full_key = f"{self.s3_prefix.rstrip('/')}/{s3_key.lstrip('/')}"
+            response = self.s3_client.get_object(Bucket=self.s3_bucket, Key=full_key)
+            df = pd.read_csv(io.BytesIO(response['Body'].read()))
+            return df
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            if error_code == 'NoSuchKey':
+                print(f"S3 key not found: {full_key}")
+            else:
+                print(f"S3 error loading {full_key}: {e}")
+            return None
+        except Exception as e:
+            print(f"Error loading from S3: {e}")
+            return None
+    
+    def _load_image_from_s3(self, image_filename: str) -> Optional[bytes]:
+        """Load an image file from S3"""
+        if not self.use_s3 or not self.s3_client:
+            return None
+        
+        try:
+            # Images are typically in data/raw/images/image_train/
+            s3_key = f"{self.s3_prefix.rstrip('/')}/raw/images/image_train/{image_filename}"
+            response = self.s3_client.get_object(Bucket=self.s3_bucket, Key=s3_key)
+            return response['Body'].read()
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            if error_code != 'NoSuchKey':  # Don't log missing images as errors
+                print(f"S3 error loading image {image_filename}: {e}")
+            return None
+        except Exception as e:
+            print(f"Error loading image from S3: {e}")
+            return None
     
     def load_dataset_sample(self, sample_size: Optional[int] = None, 
                            categories: Optional[List[int]] = None) -> pd.DataFrame:
@@ -29,17 +117,28 @@ class TrainingManager:
             pd.DataFrame: Sampled dataset
         """
         try:
-            # Prefer loading from interim (has original text) for better viewing
-            merged_train_path = self.data_interim / "merged_train.csv"
-            if merged_train_path.exists():
-                df = pd.read_csv(merged_train_path)
-            else:
-                # Fallback to processed features
-                train_features_path = self.data_processed / "train_features.csv"
-                if train_features_path.exists():
-                    df = pd.read_csv(train_features_path)
+            df = None
+            
+            # Try S3 first if configured
+            if self.use_s3:
+                # Try loading from S3: interim/merged_train.csv
+                df = self._load_from_s3("interim/merged_train.csv")
+                if df is None or df.empty:
+                    # Fallback to processed features from S3
+                    df = self._load_from_s3("processed/train_features.csv")
+            
+            # Fallback to local files if S3 failed or not configured
+            if df is None or df.empty:
+                merged_train_path = self.data_interim / "merged_train.csv"
+                if merged_train_path.exists():
+                    df = pd.read_csv(merged_train_path)
                 else:
-                    return pd.DataFrame()
+                    # Fallback to processed features
+                    train_features_path = self.data_processed / "train_features.csv"
+                    if train_features_path.exists():
+                        df = pd.read_csv(train_features_path)
+                    else:
+                        return pd.DataFrame()
             
             # Filter by categories if specified
             if categories:
@@ -57,17 +156,28 @@ class TrainingManager:
     def get_dataset_statistics(self) -> Dict:
         """Get statistics about the full dataset"""
         try:
-            # Try to load from interim folder first (has original text data)
-            merged_train_path = self.data_interim / "merged_train.csv"
-            if merged_train_path.exists():
-                df = pd.read_csv(merged_train_path)
-            else:
-                # Fallback to processed features
-                train_features_path = self.data_processed / "train_features.csv"
-                if train_features_path.exists():
-                    df = pd.read_csv(train_features_path)
+            df = None
+            
+            # Try S3 first if configured
+            if self.use_s3:
+                # Try loading from S3: interim/merged_train.csv
+                df = self._load_from_s3("interim/merged_train.csv")
+                if df is None or df.empty:
+                    # Fallback to processed features from S3
+                    df = self._load_from_s3("processed/train_features.csv")
+            
+            # Fallback to local files if S3 failed or not configured
+            if df is None or df.empty:
+                merged_train_path = self.data_interim / "merged_train.csv"
+                if merged_train_path.exists():
+                    df = pd.read_csv(merged_train_path)
                 else:
-                    return {}
+                    # Fallback to processed features
+                    train_features_path = self.data_processed / "train_features.csv"
+                    if train_features_path.exists():
+                        df = pd.read_csv(train_features_path)
+                    else:
+                        return {}
             
             # Calculate average text length from both designation and description
             avg_text_length = 0
@@ -91,6 +201,34 @@ class TrainingManager:
         except Exception as e:
             print(f"Error getting dataset statistics: {e}")
             return {}
+    
+    def load_image(self, image_filename: str) -> Optional[bytes]:
+        """
+        Load an image file from S3 or local filesystem
+        
+        Args:
+            image_filename: Name of the image file (e.g., "image_123_product_456.jpg")
+        
+        Returns:
+            bytes: Image data, or None if not found
+        """
+        # Try S3 first if configured
+        if self.use_s3:
+            image_data = self._load_image_from_s3(image_filename)
+            if image_data:
+                return image_data
+        
+        # Fallback to local filesystem
+        images_path = self.data_raw / "images" / "image_train"
+        img_path = images_path / image_filename
+        if img_path.exists():
+            try:
+                return img_path.read_bytes()
+            except Exception as e:
+                print(f"Error reading local image {image_filename}: {e}")
+                return None
+        
+        return None
     
     def create_training_config(self, 
                               sample_size: Optional[int] = None,
