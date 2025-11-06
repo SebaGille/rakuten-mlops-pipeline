@@ -46,5 +46,5 @@ echo ""
 echo "Press Ctrl+C to stop the app"
 echo ""
 
-streamlit run streamlit_app/app.py
+streamlit run streamlit_app/Home.py
 

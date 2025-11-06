@@ -6,6 +6,7 @@ through a complete MLOps pipeline for product classification.
 
 Author: Sébastien
 """
+import base64
 import streamlit as st
 from pathlib import Path
 import sys
@@ -120,18 +121,16 @@ def main():
     st.markdown("""
         ###  What is this?
         
-        An **interactive prototype** showcasing a complete MLOps pipeline for product classification.
+        An **end-to-end MLOps prototype** you can run locally with Docker Compose or deploy on AWS Fargate behind an Application Load Balancer.
         
-        This demo lets you:
-        - Explore the cloud-native architecture now running on AWS (or mirror it locally with Docker Compose)
-        - Verify the infrastructure components required for the prototype
-        - Select a sample of data from the Rakuten dataset and train a model
-        - Make real-time predictions using your model and your own product
-        - Monitor model performance over time
+        With this app you can:
+        - Inspect the production-ready cloud stack (ECS Fargate, RDS, S3, Secrets Manager, CloudWatch) or spin up the same services on localhost
+        - Orchestrate data ingestion → feature engineering → training → batch predictions via Prefect and DVC
+        - Train new models, compare runs in MLflow, and promote champions directly from the UI
+        - Serve real-time predictions through the FastAPI endpoint and log telemetry for monitoring
+        - Detect data drift with Evidently and trigger retraining flows
         
-        Behind the scenes, the pipeline tracks datasets, model weights, and artifacts, and promotes the best models end-to-end.
-        
-        https://github.com/SebaGille/rakuten-mlops-pipeline
+        The [project README](https://github.com/SebaGille/rakuten-mlops-pipeline) now includes a detailed AWS deployment guide—this page surfaces the same context for interactive exploration.
         """)
     
     st.markdown("---")
@@ -189,36 +188,65 @@ def main():
     # Deployment information
     st.markdown("## Deployment Information")
     
+    cloud_svg_path = PROJECT_ROOT / "streamlit_app" / "assets" / "cloud_architecture.svg"
+
     if AWS_ALB_URL:
         st.info(f"""
         **AWS Deployment Detected**
         
-        This application is running on a **cloud-native stack**:
-        - **Load Balancer:** {AWS_ALB_URL}
-        - **Compute:** AWS ECS services (Fargate) for MLflow + FastAPI
-        - **Database:** Amazon RDS for MLflow backend store
-        - **Storage:** Amazon S3 for datasets and model artifacts
-        - **Orchestration:** Prefect flows triggered from the pipeline layer
+        This application is running on the managed cloud stack described in the README:
+        - **Application Load Balancer:** {AWS_ALB_URL}
+        - **Compute:** ECS Fargate services (`rakuten-api`, `rakuten-mlflow`)
+        - **Database:** Amazon RDS (PostgreSQL) for the MLflow backend store
+        - **Storage:** Amazon S3 for datasets and MLflow artifacts
+        - **Secrets:** AWS Secrets Manager provides DB and model credentials to both tasks
+        - **Observability:** CloudWatch Logs capture container output; optional Prometheus/Grafana can be run locally against the ALB
+        - **Orchestration:** Prefect flows still drive ingestion, training, and retraining schedules
         
-        Grafana and Prometheus collectors are only bundled with the local Docker deployment. To inspect those dashboards, clone the repository and launch the app locally.
         """)
+
+        st.markdown("### AWS Cloud Stack Overview")
+        st.markdown(
+            textwrap.dedent(
+                """
+                | Component | Service | Notes |
+                |-----------|---------|-------|
+                | Networking | Application Load Balancer | Routes `/api` to the FastAPI service and `/mlflow` to the MLflow UI |
+                | Compute | ECS Fargate | Stateless tasks packaged from `Dockerfile.api` and `Dockerfile.mlflow` |
+                | Model Registry | MLflow Server | Persists metadata to RDS, stores artifacts in S3 |
+                | Database | Amazon RDS (PostgreSQL) | Connection string injected via Secrets Manager |
+                | Storage | Amazon S3 | Holds datasets (see `upload_to_s3.sh`) and MLflow artifacts |
+                | Secrets | AWS Secrets Manager | Provides DB creds, MLflow config, model name/stage |
+                | Observability | CloudWatch Logs | Streams ECS task logs; extend with CloudWatch alarms |
+                """
+            )
+        )
+
     else:
         st.info("""
         **Local Deployment**
         
-        This application is running **locally** with Docker Compose. The following services are available:
-        - **PostgreSQL:** Database for MLflow backend
-        - **MLflow:** Model tracking and registry (http://localhost:5000)
-        - **FastAPI:** Prediction API (http://localhost:8000)
-        - **Prometheus:** Metrics collection (http://localhost:9090)
-        - **Grafana:** Monitoring dashboards (http://localhost:3000)
+        This application is running **locally** with Docker Compose. The stack mirrors production but runs on `localhost`:
+        - **PostgreSQL:** MLflow backend database (`docker-compose.mlflow.yml`)
+        - **MLflow:** Tracking & model registry → http://localhost:5000
+        - **FastAPI:** Prediction API → http://localhost:8000 (`/docs`, `/metrics`, `/predict`)
+        - **Prometheus & Grafana:** Optional monitoring dashboards → http://localhost:9090 / http://localhost:3000
+        - **Prefect:** Launch flows via CLI (`python flows/pipeline_flow.py`) or integrate with Prefect Cloud
         
-        To start services, use the **Infrastructure** page or run:
-        ```bash
-        docker-compose -f docker-compose.api.yml up -d
-        docker-compose -f docker-compose.monitor.yml up -d
-        ```
         """)
+
+    if cloud_svg_path.exists():
+        try:
+            svg_content = cloud_svg_path.read_text(encoding="utf-8")
+            svg_b64 = base64.b64encode(svg_content.encode("utf-8")).decode("utf-8")
+            st.markdown("### AWS Cloud Architecture Diagram")
+            st.markdown(
+                f"<div style='text-align:center;'><img src='data:image/svg+xml;base64,{svg_b64}' "
+                f"alt='AWS Cloud Architecture' style='max-width:100%; height:auto;'/></div>",
+                unsafe_allow_html=True,
+            )
+        except Exception as exc:  # pragma: no cover - fallback for SVG read issues
+            st.warning(f"Unable to render cloud architecture diagram: {exc}")
 
     st.markdown("### Architecture Overview")
 
