@@ -298,67 +298,97 @@ def main():
         client = MlflowClient(tracking_uri=MLFLOW_URI)
         
         # First, try to list all available experiments for diagnostics
+        experiment = None
+        experiment_id = None
         try:
             all_experiments = client.search_experiments(max_results=100)
             print(f"\n=== Available Experiments in MLflow ===")
             if all_experiments:
                 for exp in all_experiments:
                     print(f"  - {exp.name} (ID: {exp.experiment_id})")
+                    # Try to find our experiment in the list
+                    if exp.name == EXPERIMENT_NAME:
+                        experiment = exp
+                        experiment_id = exp.experiment_id
             else:
                 print("  No experiments found in this MLflow instance.")
             print(f"=== Looking for experiment: '{EXPERIMENT_NAME}' ===\n")
         except Exception as list_error:
             print(f"Warning: Could not list experiments: {list_error}")
         
-        # Try to get or create experiment
-        try:
-            experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
-            if experiment is None:
-                print(f"Experiment '{EXPERIMENT_NAME}' not found, creating it...")
-                experiment_id = client.create_experiment(EXPERIMENT_NAME)
-                print(f"Created experiment '{EXPERIMENT_NAME}' with ID: {experiment_id}")
-            else:
-                print(f"Found experiment '{EXPERIMENT_NAME}' with ID: {experiment.experiment_id}")
-        except RestException as e:
-            # Check if it's a "Not Found" error (experiment doesn't exist)
-            # RestException for non-existent experiment typically has "Not Found" in the message
-            error_str = str(e).lower()
-            # Check if the error indicates the experiment doesn't exist
-            is_not_found = (
-                "not found" in error_str or
-                ("detail" in error_str and "not found" in error_str) or
-                (hasattr(e, 'response') and hasattr(e.response, 'text') and 
-                 "not found" in e.response.text.lower())
-            )
-            
-            if is_not_found:
-                print(f"\n⚠️  Experiment '{EXPERIMENT_NAME}' not found in this MLflow instance.")
-                print(f"   This could mean:")
-                print(f"   1. The experiment was created in a different MLflow instance")
-                print(f"   2. The MLflow tracking URI points to a different backend store")
-                print(f"   3. The experiment name is different")
-                print(f"\n   Creating new experiment '{EXPERIMENT_NAME}'...")
-                try:
-                    experiment_id = client.create_experiment(EXPERIMENT_NAME)
-                    print(f"✓ Created experiment '{EXPERIMENT_NAME}' with ID: {experiment_id}")
-                except Exception as create_error:
-                    print(f"✗ Error: Failed to create experiment: {create_error}")
-                    raise RuntimeError(f"MLflow experiment creation failed: {create_error}")
-            else:
-                # Other RestException (connection issue, etc.)
-                print(f"Error: MLflow REST API error: {e}")
-                raise RuntimeError(f"MLflow connection failed: {e}")
-        except MlflowException as e:
-            # Other MLflow exceptions
-            print(f"Error: MLflow error: {e}")
-            raise RuntimeError(f"MLflow connection failed: {e}")
-        except Exception as e:
-            # Generic exception - try to create experiment anyway
-            print(f"Warning: Unexpected error getting experiment: {e}")
-            print(f"Attempting to create experiment '{EXPERIMENT_NAME}'...")
+        # Try to get experiment - use search_experiments result if available, otherwise try get_experiment_by_name
+        if experiment is None:
+            try:
+                experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
+                if experiment is not None:
+                    experiment_id = experiment.experiment_id
+                    print(f"Found experiment '{EXPERIMENT_NAME}' with ID: {experiment_id}")
+            except RestException as e:
+                # Check if it's a "Not Found" error (experiment doesn't exist)
+                # RestException for non-existent experiment typically has "Not Found" in the message
+                error_str = str(e).lower()
+                # Check if the error indicates the experiment doesn't exist
+                is_not_found = (
+                    "not found" in error_str or
+                    ("detail" in error_str and "not found" in error_str) or
+                    (hasattr(e, 'response') and hasattr(e.response, 'text') and 
+                     "not found" in e.response.text.lower())
+                )
+                
+                if is_not_found:
+                    print(f"\n⚠️  Experiment '{EXPERIMENT_NAME}' not found via get_experiment_by_name.")
+                    print(f"   This could mean:")
+                    print(f"   1. The experiment was created in a different MLflow instance")
+                    print(f"   2. The MLflow tracking URI points to a different backend store")
+                    print(f"   3. The API endpoint is not accessible")
+                    print(f"\n   Attempting to create new experiment '{EXPERIMENT_NAME}'...")
+                    try:
+                        experiment_id = client.create_experiment(EXPERIMENT_NAME)
+                        print(f"✓ Created experiment '{EXPERIMENT_NAME}' with ID: {experiment_id}")
+                    except RestException as create_error:
+                        # If create also fails with "Not Found", it might be an API endpoint issue
+                        create_error_str = str(create_error).lower()
+                        if "not found" in create_error_str:
+                            print(f"✗ Error: Both get_experiment_by_name and create_experiment failed with 'Not Found'")
+                            print(f"   This suggests the MLflow API endpoint is not accessible.")
+                            print(f"   Please check:")
+                            print(f"   1. MLflow server is running at {MLFLOW_URI}")
+                            print(f"   2. Network connectivity to MLflow server")
+                            print(f"   3. MLFLOW_TRACKING_URI environment variable is correct")
+                            print(f"   4. API endpoint routing is configured correctly")
+                            raise RuntimeError(f"MLflow API endpoint not accessible: {create_error}")
+                        else:
+                            print(f"✗ Error: Failed to create experiment: {create_error}")
+                            raise RuntimeError(f"MLflow experiment creation failed: {create_error}")
+                    except Exception as create_error:
+                        print(f"✗ Error: Failed to create experiment: {create_error}")
+                        raise RuntimeError(f"MLflow experiment creation failed: {create_error}")
+                else:
+                    # Other RestException (connection issue, etc.)
+                    print(f"Error: MLflow REST API error: {e}")
+                    raise RuntimeError(f"MLflow connection failed: {e}")
+        
+        # If we still don't have an experiment, try to create it
+        if experiment is None and experiment_id is None:
+            print(f"Experiment '{EXPERIMENT_NAME}' not found, creating it...")
             try:
                 experiment_id = client.create_experiment(EXPERIMENT_NAME)
                 print(f"Created experiment '{EXPERIMENT_NAME}' with ID: {experiment_id}")
+            except RestException as create_error:
+                # If create also fails with "Not Found", it might be an API endpoint issue
+                create_error_str = str(create_error).lower()
+                if "not found" in create_error_str:
+                    print(f"✗ Error: create_experiment failed with 'Not Found'")
+                    print(f"   This suggests the MLflow API endpoint is not accessible.")
+                    print(f"   Please check:")
+                    print(f"   1. MLflow server is running at {MLFLOW_URI}")
+                    print(f"   2. Network connectivity to MLflow server")
+                    print(f"   3. MLFLOW_TRACKING_URI environment variable is correct")
+                    print(f"   4. API endpoint routing is configured correctly")
+                    raise RuntimeError(f"MLflow API endpoint not accessible: {create_error}")
+                else:
+                    print(f"✗ Error: Failed to create experiment: {create_error}")
+                    raise RuntimeError(f"MLflow experiment creation failed: {create_error}")
             except Exception as create_error:
                 print(f"Error: Failed to create experiment: {create_error}")
                 raise RuntimeError(f"MLflow experiment creation failed: {create_error}")
