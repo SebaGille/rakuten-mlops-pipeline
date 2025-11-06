@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import io
 
 import joblib
 import mlflow
@@ -14,6 +15,14 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from scipy.sparse import hstack, csr_matrix
+
+# Optional S3 support
+try:
+    import boto3
+    from botocore.exceptions import ClientError, NoCredentialsError
+    S3_AVAILABLE = True
+except ImportError:
+    S3_AVAILABLE = False
 
 # Handle imports for both package and script execution
 try:
@@ -48,6 +57,58 @@ def _git(cmd: list[str]) -> str:
 
 git_commit = _git(["git", "rev-parse", "--short", "HEAD"])
 git_branch = _git(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+
+
+def _load_from_s3(s3_key: str) -> pd.DataFrame:
+    """Load a CSV file from S3 if configured"""
+    if not S3_AVAILABLE:
+        return None
+    
+    s3_bucket = os.getenv("S3_DATA_BUCKET", "")
+    s3_prefix = os.getenv("S3_DATA_PREFIX", "data/")
+    
+    if not s3_bucket:
+        return None
+    
+    try:
+        s3_client = boto3.client('s3')
+        full_key = f"{s3_prefix.rstrip('/')}/{s3_key.lstrip('/')}"
+        response = s3_client.get_object(Bucket=s3_bucket, Key=full_key)
+        df = pd.read_csv(io.BytesIO(response['Body'].read()))
+        print(f"Loaded {s3_key} from S3: s3://{s3_bucket}/{full_key}")
+        return df
+    except (ClientError, NoCredentialsError) as e:
+        print(f"S3 error loading {s3_key}: {e}")
+        return None
+    except Exception as e:
+        print(f"Error loading from S3: {e}")
+        return None
+
+
+def _load_numpy_from_s3(s3_key: str) -> np.ndarray:
+    """Load a numpy array from S3 if configured"""
+    if not S3_AVAILABLE:
+        return None
+    
+    s3_bucket = os.getenv("S3_DATA_BUCKET", "")
+    s3_prefix = os.getenv("S3_DATA_PREFIX", "data/")
+    
+    if not s3_bucket:
+        return None
+    
+    try:
+        s3_client = boto3.client('s3')
+        full_key = f"{s3_prefix.rstrip('/')}/{s3_key.lstrip('/')}"
+        response = s3_client.get_object(Bucket=s3_bucket, Key=full_key)
+        array = np.load(io.BytesIO(response['Body'].read()))
+        print(f"Loaded {s3_key} from S3: s3://{s3_bucket}/{full_key}")
+        return array
+    except (ClientError, NoCredentialsError) as e:
+        print(f"S3 error loading {s3_key}: {e}")
+        return None
+    except Exception as e:
+        print(f"Error loading from S3: {e}")
+        return None
 
 
 def compare_and_promote_model(client, model_name, current_run_id, current_metrics):
@@ -126,7 +187,19 @@ def main():
     print("=" * 50)
     
     print("\nLoading processed data...")
-    df = pd.read_csv(INPUT_FILE)                # "train_features.csv"
+    # Try local file first, then S3 if available
+    if INPUT_FILE.exists():
+        df = pd.read_csv(INPUT_FILE)
+        print(f"Loaded from local file: {INPUT_FILE}")
+    else:
+        # Try loading from S3
+        df = _load_from_s3("processed/train_features.csv")
+        if df is None or df.empty:
+            raise FileNotFoundError(
+                f"Training data not found locally at {INPUT_FILE} and not available in S3. "
+                f"Please ensure the data file exists or configure S3_DATA_BUCKET and S3_DATA_PREFIX environment variables."
+            )
+    
     print(f"Loaded full dataset shape: {df.shape}")
 
     # --- Apply sampling if specified ---
@@ -150,9 +223,19 @@ def main():
     image_features = None
     if use_images:
         print("Loading image features...")
-        if not IMAGE_FEATURES_FILE.exists():
-            raise FileNotFoundError(f"Image features not found: {IMAGE_FEATURES_FILE}. Run build_features.py first.")
-        image_features_full = np.load(IMAGE_FEATURES_FILE)
+        # Try local file first, then S3 if available
+        if IMAGE_FEATURES_FILE.exists():
+            image_features_full = np.load(IMAGE_FEATURES_FILE)
+            print(f"Loaded from local file: {IMAGE_FEATURES_FILE}")
+        else:
+            # Try loading from S3
+            image_features_full = _load_numpy_from_s3("processed/image_features.npy")
+            if image_features_full is None:
+                raise FileNotFoundError(
+                    f"Image features not found locally at {IMAGE_FEATURES_FILE} and not available in S3. "
+                    f"Please ensure the image features file exists or configure S3_DATA_BUCKET and S3_DATA_PREFIX environment variables."
+                )
+        
         print(f"Image features shape: {image_features_full.shape}")
         
         # If we sampled the data, we need to get the corresponding image features

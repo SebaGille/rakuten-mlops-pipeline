@@ -5,6 +5,9 @@ import sys
 import pandas as pd
 import plotly.express as px
 import json
+import os
+import io
+from typing import Optional
 
 # Add parent directory to path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -13,6 +16,61 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from streamlit_app.utils.constants import (
     PROMETHEUS_URL, GRAFANA_URL, API_URL
 )
+from streamlit_app.utils.prediction_manager import PredictionManager
+
+# Optional S3 support for drift reports
+try:
+    import boto3
+    from botocore.exceptions import ClientError, NoCredentialsError
+    S3_AVAILABLE = True
+except ImportError:
+    S3_AVAILABLE = False
+
+
+def _get_s3_client():
+    """Get S3 client if configured"""
+    if not S3_AVAILABLE:
+        return None
+    
+    try:
+        import streamlit as st
+        s3_bucket = st.secrets.get("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
+        aws_access_key = st.secrets.get("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID"))
+        aws_secret_key = st.secrets.get("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY"))
+        aws_region = st.secrets.get("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
+    except (ImportError, AttributeError, KeyError):
+        s3_bucket = os.getenv("S3_DATA_BUCKET", "")
+        aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+        aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+        aws_region = os.getenv("AWS_DEFAULT_REGION", "eu-west-1")
+    
+    if not s3_bucket:
+        return None
+    
+    try:
+        return boto3.client(
+            's3',
+            aws_access_key_id=aws_access_key,
+            aws_secret_access_key=aws_secret_key,
+            region_name=aws_region
+        ), s3_bucket, os.getenv("S3_DATA_PREFIX", "data/")
+    except Exception:
+        return None
+
+
+def _load_json_from_s3(s3_client, bucket, prefix, s3_key: str) -> Optional[dict]:
+    """Load JSON from S3"""
+    try:
+        full_key = f"{prefix.rstrip('/')}/{s3_key.lstrip('/')}"
+        response = s3_client.get_object(Bucket=bucket, Key=full_key)
+        content = response['Body'].read().decode('utf-8')
+        return json.loads(content)
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code') == 'NoSuchKey':
+            return None
+        return None
+    except Exception:
+        return None
 
 st.set_page_config(
     page_title="Monitoring - Rakuten MLOps",
@@ -47,136 +105,132 @@ with tab1:
     - Error rates
     """)
     
-    # Check if inference log exists
-    inference_log_path = PROJECT_ROOT / "data" / "monitoring" / "inference_log.csv"
+    # Load inference log using PredictionManager (supports S3)
+    prediction_manager = PredictionManager(API_URL, PROJECT_ROOT)
+    df_log = None
     
-    if inference_log_path.exists():
-        try:
-            # Try reading with error handling for malformed CSV
-            df_log = pd.read_csv(inference_log_path, on_bad_lines='skip', encoding='utf-8')
-        except Exception as e:
-            st.error(f"Error loading inference log: {str(e)}")
-            st.info("The log file may be corrupted. Try clearing it or checking the format.")
-            df_log = None
+    try:
+        df_log = prediction_manager.get_prediction_history(limit=10000)
+    except Exception as e:
+        st.error(f"Error loading inference log: {str(e)}")
+        st.info("The log file may be corrupted or not accessible.")
+        df_log = None
+    
+    if df_log is not None and not df_log.empty:
+        # Display key metrics
+        col1, col2, col3, col4 = st.columns(4)
         
-        if df_log is not None and not df_log.empty:
-            # Display key metrics
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Total Predictions", len(df_log))
-            
-            with col2:
-                if 'predicted_class' in df_log.columns:
-                    unique_classes = df_log['predicted_class'].nunique()
-                    st.metric("Unique Classes Predicted", unique_classes)
-                else:
-                    st.metric("Unique Classes Predicted", "N/A")
-            
-            with col3:
-                if 'designation_length' in df_log.columns:
-                    avg_des_len = df_log['designation_length'].mean()
-                    st.metric("Avg Designation Length", f"{avg_des_len:.0f} chars")
-                else:
-                    st.metric("Avg Designation Length", "N/A")
-            
-            with col4:
-                if 'description_length' in df_log.columns:
-                    avg_desc_len = df_log['description_length'].mean()
-                    st.metric("Avg Description Length", f"{avg_desc_len:.0f} chars")
-                else:
-                    st.metric("Avg Description Length", "N/A")
-            
-            st.markdown("---")
-            
-            # Predictions over time
-            st.markdown("#### 📈 Predictions Over Time")
-            
-            if 'timestamp' in df_log.columns:
-                df_time = df_log.copy()
-                df_time['timestamp'] = pd.to_datetime(df_time['timestamp'], errors='coerce')
-                df_time = df_time.dropna(subset=['timestamp'])
-                df_time['date'] = df_time['timestamp'].dt.date
-                predictions_by_date = df_time.groupby('date').size().reset_index(name='count')
-                
-                fig_time = px.line(
-                    predictions_by_date,
-                    x='date',
-                    y='count',
-                    title='Daily Prediction Volume',
-                    labels={'date': 'Date', 'count': 'Number of Predictions'},
-                    markers=True
-                )
-                fig_time.update_layout(height=400)
-                st.plotly_chart(fig_time, use_container_width=True)
-            else:
-                st.info("Timestamp data not available")
-            
-            st.markdown("---")
-            
-            # Class distribution
-            st.markdown("#### 🏷️ Prediction Class Distribution")
-            
+        with col1:
+            st.metric("Total Predictions", len(df_log))
+        
+        with col2:
             if 'predicted_class' in df_log.columns:
-                class_dist = df_log['predicted_class'].value_counts().head(15)
-                df_class = pd.DataFrame({
-                    'Category': class_dist.index,
-                    'Count': class_dist.values
-                })
-                
-                fig_class = px.bar(
-                    df_class,
-                    x='Category',
-                    y='Count',
-                    title='Top 15 Predicted Categories',
-                    color='Count',
-                    color_continuous_scale='Blues'
-                )
-                fig_class.update_layout(xaxis_tickangle=-45, height=400)
-                st.plotly_chart(fig_class, use_container_width=True)
+                unique_classes = df_log['predicted_class'].nunique()
+                st.metric("Unique Classes Predicted", unique_classes)
             else:
-                st.info("Prediction class data not available")
+                st.metric("Unique Classes Predicted", "N/A")
+        
+        with col3:
+            if 'designation_length' in df_log.columns:
+                avg_des_len = df_log['designation_length'].mean()
+                st.metric("Avg Designation Length", f"{avg_des_len:.0f} chars")
+            else:
+                st.metric("Avg Designation Length", "N/A")
+        
+        with col4:
+            if 'description_length' in df_log.columns:
+                avg_desc_len = df_log['description_length'].mean()
+                st.metric("Avg Description Length", f"{avg_desc_len:.0f} chars")
+            else:
+                st.metric("Avg Description Length", "N/A")
+        
+        st.markdown("---")
+        
+        # Predictions over time
+        st.markdown("#### 📈 Predictions Over Time")
+        
+        if 'timestamp' in df_log.columns:
+            df_time = df_log.copy()
+            df_time['timestamp'] = pd.to_datetime(df_time['timestamp'], errors='coerce')
+            df_time = df_time.dropna(subset=['timestamp'])
+            df_time['date'] = df_time['timestamp'].dt.date
+            predictions_by_date = df_time.groupby('date').size().reset_index(name='count')
             
-            st.markdown("---")
-            
-            # Text length distribution
-            st.markdown("#### 📏 Input Text Length Distribution")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if 'designation_length' in df_log.columns:
-                    fig_des = px.histogram(
-                        df_log,
-                        x='designation_length',
-                        title='Designation Length Distribution',
-                        nbins=50,
-                        color_discrete_sequence=['#3498db']
-                    )
-                    fig_des.update_layout(height=300)
-                    st.plotly_chart(fig_des, use_container_width=True)
-                else:
-                    st.info("Designation length data not available")
-            
-            with col2:
-                if 'description_length' in df_log.columns:
-                    fig_desc = px.histogram(
-                        df_log,
-                        x='description_length',
-                        title='Description Length Distribution',
-                        nbins=50,
-                        color_discrete_sequence=['#e74c3c']
-                    )
-                    fig_desc.update_layout(height=300)
-                    st.plotly_chart(fig_desc, use_container_width=True)
-                else:
-                    st.info("Description length data not available")
+            fig_time = px.line(
+                predictions_by_date,
+                x='date',
+                y='count',
+                title='Daily Prediction Volume',
+                labels={'date': 'Date', 'count': 'Number of Predictions'},
+                markers=True
+            )
+            fig_time.update_layout(height=400)
+            st.plotly_chart(fig_time, use_container_width=True)
         else:
-            st.warning("No valid prediction data found in log file.")
-    
+            st.info("Timestamp data not available")
+        
+        st.markdown("---")
+        
+        # Class distribution
+        st.markdown("#### 🏷️ Prediction Class Distribution")
+        
+        if 'predicted_class' in df_log.columns:
+            class_dist = df_log['predicted_class'].value_counts().head(15)
+            df_class = pd.DataFrame({
+                'Category': class_dist.index,
+                'Count': class_dist.values
+            })
+            
+            fig_class = px.bar(
+                df_class,
+                x='Category',
+                y='Count',
+                title='Top 15 Predicted Categories',
+                color='Count',
+                color_continuous_scale='Blues'
+            )
+            fig_class.update_layout(xaxis_tickangle=-45, height=400)
+            st.plotly_chart(fig_class, use_container_width=True)
+        else:
+            st.info("Prediction class data not available")
+        
+        st.markdown("---")
+        
+        # Text length distribution
+        st.markdown("#### 📏 Input Text Length Distribution")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if 'designation_length' in df_log.columns:
+                fig_des = px.histogram(
+                    df_log,
+                    x='designation_length',
+                    title='Designation Length Distribution',
+                    nbins=50,
+                    color_discrete_sequence=['#3498db']
+                )
+                fig_des.update_layout(height=300)
+                st.plotly_chart(fig_des, use_container_width=True)
+            else:
+                st.info("Designation length data not available")
+        
+        with col2:
+            if 'description_length' in df_log.columns:
+                fig_desc = px.histogram(
+                    df_log,
+                    x='description_length',
+                    title='Description Length Distribution',
+                    nbins=50,
+                    color_discrete_sequence=['#e74c3c']
+                )
+                fig_desc.update_layout(height=300)
+                st.plotly_chart(fig_desc, use_container_width=True)
+            else:
+                st.info("Description length data not available")
     else:
         st.warning("No prediction logs found yet. Make some predictions first!")
-        st.info("Logs will be available at: `data/monitoring/inference_log.csv`")
+        st.info("Logs are stored in S3 (if configured) or locally at: `data/monitoring/inference_log.csv`")
 
 # ==================== TAB 2: Data Drift ====================
 with tab2:
@@ -192,14 +246,26 @@ with tab2:
     - Target drift (if labels are available)
     """)
     
-    # Check for Evidently reports
-    evidently_report_path = PROJECT_ROOT / "reports" / "evidently" / "evidently_report.json"
-    evidently_html_path = PROJECT_ROOT / "reports" / "evidently" / "evidently_report.html"
+    # Check for Evidently reports (local or S3)
     drift_status_path = PROJECT_ROOT / "reports" / "evidently" / "drift_status.json"
+    drift_status = None
     
-    if drift_status_path.exists():
-        with open(drift_status_path, 'r') as f:
-            drift_status = json.load(f)
+    # Try S3 first if configured
+    s3_result = _get_s3_client()
+    if s3_result:
+        s3_client, s3_bucket, s3_prefix = s3_result
+        drift_status = _load_json_from_s3(s3_client, s3_bucket, s3_prefix, "reports/evidently/drift_status.json")
+    
+    # Fallback to local file
+    if drift_status is None and drift_status_path.exists():
+        try:
+            with open(drift_status_path, 'r') as f:
+                drift_status = json.load(f)
+        except Exception as e:
+            st.warning(f"Error loading drift status: {e}")
+            drift_status = None
+    
+    if drift_status:
         
         st.markdown("#### 🚨 Current Drift Status")
         
@@ -251,25 +317,44 @@ with tab2:
             st.dataframe(df_drift, use_container_width=True, height=300)
         
         # Link to full HTML report
-        if evidently_html_path.exists():
+        evidently_html_path = PROJECT_ROOT / "reports" / "evidently" / "evidently_report.html"
+        html_report_available = False
+        
+        # Check if HTML report exists (local or S3)
+        if s3_result:
+            s3_client, s3_bucket, s3_prefix = s3_result
+            try:
+                full_key = f"{s3_prefix.rstrip('/')}/reports/evidently/evidently_report.html"
+                s3_client.head_object(Bucket=s3_bucket, Key=full_key)
+                html_report_available = True
+                html_report_path = f"s3://{s3_bucket}/{full_key}"
+            except ClientError:
+                pass
+        
+        if not html_report_available and evidently_html_path.exists():
+            html_report_available = True
+            html_report_path = str(evidently_html_path.relative_to(PROJECT_ROOT))
+        
+        if html_report_available:
             st.markdown("---")
             st.markdown("#### 📄 Full Evidently Report")
             
             st.info(f"""
             A detailed HTML report is available at:
-            `{evidently_html_path.relative_to(PROJECT_ROOT)}`
+            `{html_report_path}`
             
-            Open it in your browser to see:
+            The report includes:
             - Feature distributions comparison
             - Statistical tests details
             - Interactive visualizations
             - Recommendations
             """)
             
-            # Read and display button
-            if st.button("🔗 Open HTML Report in Browser"):
-                import webbrowser
-                webbrowser.open(f"file://{evidently_html_path}")
+            # Note: Cannot open file:// URLs on Streamlit Cloud, so just show the path
+            if html_report_path.startswith("s3://"):
+                st.info("💡 Download the report from S3 to view it in your browser.")
+            elif html_report_path.startswith("/") or "\\" in html_report_path:
+                st.info("💡 Open the report file from your local filesystem to view it in your browser.")
     
     else:
         st.warning("No drift reports found yet.")

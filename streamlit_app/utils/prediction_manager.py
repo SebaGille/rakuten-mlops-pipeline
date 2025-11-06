@@ -5,9 +5,18 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 import json
+import os
 from datetime import datetime
 from PIL import Image
 import io
+
+# Optional S3 support
+try:
+    import boto3
+    from botocore.exceptions import ClientError, NoCredentialsError
+    S3_AVAILABLE = True
+except ImportError:
+    S3_AVAILABLE = False
 
 
 class PredictionManager:
@@ -19,6 +28,38 @@ class PredictionManager:
         self.monitoring_dir = project_root / "data" / "monitoring"
         self.monitoring_dir.mkdir(parents=True, exist_ok=True)
         self.inference_log_path = self.monitoring_dir / "inference_log.csv"
+        
+        # S3 Configuration (for Streamlit Cloud / AWS deployment)
+        try:
+            import streamlit as st
+            self.s3_bucket = st.secrets.get("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
+            self.s3_prefix = st.secrets.get("S3_DATA_PREFIX", os.getenv("S3_DATA_PREFIX", "data/"))
+            aws_access_key = st.secrets.get("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID"))
+            aws_secret_key = st.secrets.get("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY"))
+            aws_region = st.secrets.get("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
+        except (ImportError, AttributeError, KeyError):
+            self.s3_bucket = os.getenv("S3_DATA_BUCKET", "")
+            self.s3_prefix = os.getenv("S3_DATA_PREFIX", "data/")
+            aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+            aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+            aws_region = os.getenv("AWS_DEFAULT_REGION", "eu-west-1")
+        
+        self.use_s3 = bool(self.s3_bucket) and S3_AVAILABLE
+        
+        # Initialize S3 client if bucket is configured
+        self.s3_client = None
+        if self.use_s3:
+            try:
+                self.s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=aws_access_key,
+                    aws_secret_access_key=aws_secret_key,
+                    region_name=aws_region
+                )
+            except Exception as e:
+                print(f"S3 initialization failed: {e}. Falling back to local files.")
+                self.use_s3 = False
+                self.s3_client = None
     
     def check_api_health(self) -> bool:
         """Check if the API is accessible"""
@@ -98,9 +139,64 @@ class PredictionManager:
             return [(prediction['predicted_class'], 'Unknown', 1.0)]
         return []
     
+    def _save_to_s3(self, s3_key: str, content: bytes) -> bool:
+        """Save content to S3"""
+        if not self.use_s3 or not self.s3_client:
+            return False
+        
+        try:
+            full_key = f"{self.s3_prefix.rstrip('/')}/{s3_key.lstrip('/')}"
+            self.s3_client.put_object(Bucket=self.s3_bucket, Key=full_key, Body=content)
+            return True
+        except Exception as e:
+            print(f"S3 error saving {s3_key}: {e}")
+            return False
+    
+    def _load_from_s3(self, s3_key: str) -> Optional[pd.DataFrame]:
+        """Load CSV from S3"""
+        if not self.use_s3 or not self.s3_client:
+            return None
+        
+        try:
+            full_key = f"{self.s3_prefix.rstrip('/')}/{s3_key.lstrip('/')}"
+            response = self.s3_client.get_object(Bucket=self.s3_bucket, Key=full_key)
+            df = pd.read_csv(io.BytesIO(response['Body'].read()))
+            return df
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            if error_code == 'NoSuchKey':
+                return None  # File doesn't exist yet
+            print(f"S3 error loading {s3_key}: {e}")
+            return None
+        except Exception as e:
+            print(f"Error loading from S3: {e}")
+            return None
+    
+    def _append_to_s3_csv(self, s3_key: str, new_row: Dict) -> bool:
+        """Append a row to CSV in S3"""
+        if not self.use_s3 or not self.s3_client:
+            return False
+        
+        try:
+            # Load existing data
+            df = self._load_from_s3(s3_key)
+            if df is None:
+                # Create new DataFrame
+                df = pd.DataFrame([new_row])
+            else:
+                # Append new row
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            
+            # Save back to S3
+            csv_content = df.to_csv(index=False).encode('utf-8')
+            return self._save_to_s3(s3_key, csv_content)
+        except Exception as e:
+            print(f"Error appending to S3 CSV: {e}")
+            return False
+    
     def log_prediction(self, designation: str, description: str, 
                       prediction: Dict) -> None:
-        """Log prediction to CSV for monitoring"""
+        """Log prediction to CSV for monitoring (local or S3)"""
         try:
             log_entry = {
                 'timestamp': datetime.now().isoformat(),
@@ -111,7 +207,13 @@ class PredictionManager:
                 'description_length': len(description) if description else 0
             }
             
-            # Append to CSV
+            # Try S3 first if configured
+            if self.use_s3:
+                success = self._append_to_s3_csv("monitoring/inference_log.csv", log_entry)
+                if success:
+                    return
+            
+            # Fallback to local file
             df = pd.DataFrame([log_entry])
             if self.inference_log_path.exists():
                 df.to_csv(self.inference_log_path, mode='a', header=False, index=False)
@@ -122,34 +224,50 @@ class PredictionManager:
             print(f"Error logging prediction: {e}")
     
     def get_prediction_history(self, limit: int = 50) -> pd.DataFrame:
-        """Get recent prediction history"""
+        """Get recent prediction history (from S3 or local)"""
         try:
-            if self.inference_log_path.exists():
-                df = pd.read_csv(self.inference_log_path, on_bad_lines='skip', encoding='utf-8')
-                
-                # Handle old column name for backward compatibility
-                if 'predicted_prdtypecode' in df.columns and 'predicted_class' not in df.columns:
-                    df.rename(columns={'predicted_prdtypecode': 'predicted_class'}, inplace=True)
-                
-                # Ensure required columns exist
-                required_cols = ['timestamp', 'designation', 'predicted_class']
-                for col in required_cols:
-                    if col not in df.columns:
-                        print(f"Warning: Missing column '{col}' in inference log")
-                
-                return df.tail(limit)
-            return pd.DataFrame()
+            df = None
+            
+            # Try S3 first if configured
+            if self.use_s3:
+                df = self._load_from_s3("monitoring/inference_log.csv")
+            
+            # Fallback to local file
+            if df is None or df.empty:
+                if self.inference_log_path.exists():
+                    df = pd.read_csv(self.inference_log_path, on_bad_lines='skip', encoding='utf-8')
+                else:
+                    return pd.DataFrame()
+            
+            # Handle old column name for backward compatibility
+            if 'predicted_prdtypecode' in df.columns and 'predicted_class' not in df.columns:
+                df.rename(columns={'predicted_prdtypecode': 'predicted_class'}, inplace=True)
+            
+            # Ensure required columns exist
+            required_cols = ['timestamp', 'designation', 'predicted_class']
+            for col in required_cols:
+                if col not in df.columns:
+                    print(f"Warning: Missing column '{col}' in inference log")
+            
+            return df.tail(limit)
         except Exception as e:
             print(f"Error loading prediction history: {e}")
             return pd.DataFrame()
     
     def get_prediction_statistics(self) -> Dict:
-        """Get statistics about predictions"""
+        """Get statistics about predictions (from S3 or local)"""
         try:
-            if not self.inference_log_path.exists():
-                return {}
+            df = None
             
-            df = pd.read_csv(self.inference_log_path, on_bad_lines='skip', encoding='utf-8')
+            # Try S3 first if configured
+            if self.use_s3:
+                df = self._load_from_s3("monitoring/inference_log.csv")
+            
+            # Fallback to local file
+            if df is None or df.empty:
+                if not self.inference_log_path.exists():
+                    return {}
+                df = pd.read_csv(self.inference_log_path, on_bad_lines='skip', encoding='utf-8')
             
             # Handle old column name for backward compatibility
             if 'predicted_prdtypecode' in df.columns and 'predicted_class' not in df.columns:
@@ -223,6 +341,16 @@ class PredictionManager:
     def clear_prediction_history(self) -> bool:
         """Clear prediction history (for testing/demo purposes)"""
         try:
+            # Try S3 first if configured
+            if self.use_s3 and self.s3_client:
+                try:
+                    full_key = f"{self.s3_prefix.rstrip('/')}/monitoring/inference_log.csv"
+                    self.s3_client.delete_object(Bucket=self.s3_bucket, Key=full_key)
+                    return True
+                except Exception as e:
+                    print(f"Error clearing S3 prediction history: {e}")
+            
+            # Fallback to local file
             if self.inference_log_path.exists():
                 self.inference_log_path.unlink()
             return True
