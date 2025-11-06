@@ -265,9 +265,11 @@ class TrainingManager:
             # Build command
             cmd = f"cd {self.project_root} && "
             
-            # Export environment variables
+            # Export environment variables (properly quote values to handle special characters)
             for key, value in env_vars.items():
-                cmd += f"export {key}={value} && "
+                # Escape single quotes in value and wrap in single quotes
+                escaped_value = str(value).replace("'", "'\"'\"'")
+                cmd += f"export {key}='{escaped_value}' && "
             
             # Run training script
             cmd += "python src/models/train_model.py"
