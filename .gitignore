@@ -104,3 +104,6 @@ venv/
 
 # MLflow local runs (artifacts should be on S3)
 mlruns/
+
+# Evidently reports (HTML is large and auto-generated)
+reports/evidently/*.html
