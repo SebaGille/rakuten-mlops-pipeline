@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 import subprocess
 import json
 import os
+import sys
 import io
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
@@ -262,7 +263,8 @@ class TrainingManager:
                 for key, value in config['hyperparams'].items():
                     env_vars[f'HYPERPARAM_{key.upper()}'] = str(value)
             
-            # Build command
+            # Build command - use sys.executable to ensure same Python interpreter
+            python_executable = sys.executable
             cmd = f"cd {self.project_root} && "
             
             # Export environment variables (properly quote values to handle special characters)
@@ -271,8 +273,8 @@ class TrainingManager:
                 escaped_value = str(value).replace("'", "'\"'\"'")
                 cmd += f"export {key}='{escaped_value}' && "
             
-            # Run training script
-            cmd += "python src/models/train_model.py"
+            # Run training script with the same Python interpreter
+            cmd += f"{python_executable} src/models/train_model.py"
             
             print(f"Executing: {cmd}")
             
