@@ -1,453 +1,142 @@
-# Rakuten Product Classification — MLOps Pipeline
-
-> ⚠️ **Note on Project Origin**: This repository was initially forked from an **empty school template**. 100% of the visible code, MLOps architecture, and implementation was developed by me personally. The initial fork only served as an empty folder structure.
-
-A complete MLOps pipeline for Rakuten product classification (text + images) with **traceability**, **versioning**, and **experiment tracking**.
-
-## 🔧 Tech Stack
-- **Python 3.11** (venv) — ⚠️ Required for Prefect
-- **DVC** + **Dagshub** (data/model versioning)
-- **MLflow** + **PostgreSQL** + **FastAPI** (Docker) — experiment tracking & serving
-- **MLflow Artifacts**: AWS S3 (via environment variables)
-- **Prefect** (orchestration) — installed
-- **Prometheus** + **Grafana** + **Evidently** (monitoring & drift detection) — ✅ implemented
-- **CI/CD**: GitHub Actions — ✅ implemented
-- **Streamlit** (interactive showcase UI) — ✅ **NEW!**
-
-## 🎯 Interactive Streamlit Showcase — **NEW!**
-
-> 🚀 **Try the interactive demo!** A complete Streamlit application that showcases ML Engineering + Product Management skills.
-
-### Features:
-- 🐳 **Infrastructure Management**: Real-time Docker service monitoring and control
-- 🎯 **Interactive Training**: Configure hyperparameters, train models, track experiments
-- 🔮 **Live Predictions**: Upload images, enter text, get real-time predictions
-- 📊 **Monitoring Dashboard**: Drift detection, performance tracking, system metrics
-
-### Quick Start:
-```bash
-# Install Streamlit dependencies
-pip install -r requirements-streamlit.txt
-
-# Launch the showcase
-streamlit run streamlit_app/app.py
-```
-
-📖 **Full Documentation**: See [STREAMLIT_README.md](STREAMLIT_README.md) and [QUICKSTART_STREAMLIT.md](QUICKSTART_STREAMLIT.md)
-
----
-
-## 📦 Data Structure
-```
-data/
-├─ raw/
-│  ├─ X_train.csv
-│  ├─ Y_train.csv
-│  ├─ X_test.csv
-│  └─ images/image_train/   (files: image_<imageid>_product_<productid>.jpg)
-├─ interim/
-│  └─ merged_train.csv
-└─ processed/
-    ├─ train_features.csv
-    └─ predictions.csv
-```
-
-## 🗂️ Repository Structure
-```
-src/
-├─ data/make_dataset.py            # data ingestion + validation
-├─ features/build_features.py      # preprocessing & text features
-└─ models/
-   ├─ train_model.py               # training + MLflow logging
-   └─ predict_model.py             # inference on X_test
-docker-compose.mlflow.yml          # MLflow + Postgres (Docker)
-Dockerfile.mlflow                  # custom MLflow image (psycopg2)
-dvc.yaml                           # DVC pipeline (ingest→features→train→predict)
-```
-
-## 🚀 Quick Start
-
-### 1) Python Environment
-```bash
-# Use Python 3.11 (required for Prefect)
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 2) Environment Variables (S3 / MLflow / Grafana / PostgreSQL)
-
-⚠️ **IMPORTANT**: Create a `.env` file at project root (not committed, already in `.gitignore`):
-
-```bash
-# AWS S3 Configuration for MLflow
-AWS_ACCESS_KEY_ID=your_access_key_here
-AWS_SECRET_ACCESS_KEY=your_secret_key_here
-AWS_DEFAULT_REGION=eu-west-1
-S3_BUCKET_NAME=your-bucket-name
-
-# Grafana Configuration (for monitoring dashboard)
-GF_SECURITY_ADMIN_USER=admin
-GF_SECURITY_ADMIN_PASSWORD=your_secure_password
-
-# PostgreSQL Configuration (for MLflow backend)
-POSTGRES_USER=mlflow
-POSTGRES_PASSWORD=your_secure_password
-POSTGRES_DB=mlflow
-```
-
-💡 **Tip**: You can copy `.env.example` to `.env` and fill in your actual values:
-```bash
-cp .env.example .env
-nano .env  # Edit with your values
-```
-
-Docker Compose automatically loads this `.env` file for containers.
-
-### 3) Start Docker Services (MLflow + PostgreSQL + API)
-
-```bash
-# Start all services (mlflow, postgres, rakuten_api)
-docker-compose -f docker-compose.api.yml up -d
-
-# Check that everything is running
-docker ps
-
-# MLflow UI: http://localhost:5000
-# Rakuten API: http://localhost:8000
-# API Docs: http://localhost:8000/docs
-```
-
-**Stop all containers**:
-```bash
-docker-compose -f docker-compose.api.yml down
-```
-
-**Restart after modifications**:
-```bash
-docker-compose -f docker-compose.api.yml down
-docker-compose -f docker-compose.api.yml up --build -d
-```
-
-### 4) Run the Pipeline (Prefect)
-
-⚠️ **CRITICAL**: For MLflow artifacts to be saved on S3 (not locally), **you MUST load environment variables** before running the pipeline:
-
-```bash
-# Activate virtual environment
-source .venv/bin/activate
-
-# ⚠️ IMPORTANT: Load AWS variables from .env
-export $(cat .env | grep -v '^#' | xargs)
-
-# Set MLflow tracking URI
-export MLFLOW_TRACKING_URI=http://localhost:5000
-
-# Run complete pipeline (ingest → features → train → predict)
-python flows/pipeline_flow.py
-```
-
-**One-line command**:
-```bash
-source .venv/bin/activate && export $(cat .env | grep -v '^#' | xargs) && export MLFLOW_TRACKING_URI=http://localhost:5000 && python flows/pipeline_flow.py
-```
-
-### 5) DVC Pipeline (reproducible alternative)
-
-```bash
-# Load environment variables
-export $(cat .env | grep -v '^#' | xargs)
-
-# Execute ingest → features → train → predict
-dvc repro
-
-# Push artifacts (data/models) to DVC remote (Dagshub)
-dvc push
-```
-
-### 6) Individual Scripts
-
-```bash
-# Load .env first
-export $(cat .env | grep -v '^#' | xargs)
-
-# Build features
-python src/features/build_features.py
-
-# Training (MLflow logging + S3 artifacts)
-python src/models/train_model.py
-
-# Predictions on X_test
-python src/models/predict_model.py
-```
-
-### 7) Monitoring Stack (Prometheus + Grafana + Evidently)
-
-**Start monitoring services**:
-```bash
-docker-compose -f docker-compose.monitor.yml up -d
-
-# Access dashboards
-# Prometheus: http://localhost:9090
-# Grafana: http://localhost:3000 (use credentials from .env file: GF_SECURITY_ADMIN_USER / GF_SECURITY_ADMIN_PASSWORD)
-```
-
-**Generate Evidently drift report**:
-```bash
-# Make some predictions first to populate inference log
-curl -X POST "http://localhost:8000/predict" \
-  -H "Content-Type: application/json" \
-  -d '{"designation": "Product name", "description": "Product description"}'
-
-# Generate drift report
-python src/monitoring/generate_evidently.py
-
-# View report: reports/evidently/evidently_report.html
-```
-
-### 8) Prefect Deployment & Scheduling
-
-```bash
-# Activate the project virtual environment and load environment variables
-source .venv/bin/activate
-export $(cat .env | grep -v '^#' | xargs)
-
-# Register or update Prefect deployments defined in prefect.yaml
-prefect deploy
-
-# Start (or restart) the worker that listens to the process work pool
-prefect worker start --pool "monitor-process-pool"
-
-# (Optional) Trigger an immediate run without waiting for the cron schedule
-prefect deployment run "monitor-and-retrain/monitor-and-retrain-daily"
-
-# Inspect registered deployments
-prefect deployment ls
-```
-
-Notes:
-- The deployment configuration now lives in `prefect.yaml`; the legacy
-  `prefect deployment build/apply` workflow is no longer used.
-- The worker command is long-running—run it in a dedicated terminal
-  (or background service) so scheduled runs at `0 9 * * *` can execute.
-
-## 🧭 Best Practices & Traceability
-
-* **MLflow**: Each run logs parameters, metrics, and artifacts (model, vectorizer, metrics.json).
-  Tags link the run to the **Git commit** (`git_commit`, `git_branch`) and the run includes `dvc.yaml`/`dvc.lock`.
-* **DVC**: Manages pipeline outputs (`data/interim`, `data/processed`, `models/*`) and syncs to Dagshub.
-* **Branches**: Work on feature branches (e.g., `Dev`) then PR to `main`.
-
-## 🔒 Security Best Practices
-
-* ✅ **Never commit `.env`** (already in `.gitignore`)
-* ✅ **Always commit `.env.example`** to document required variables
-* ⚠️ **Use strong passwords** in production environments
-* 🔄 **Rotate secrets regularly** (AWS keys, database passwords, Grafana credentials)
-* 🔐 **For production deployments**, do not use `.env` files. Instead use:
-  - **Cloud secret managers**: AWS Secrets Manager, Azure Key Vault, Google Cloud Secret Manager
-  - **CI/CD secrets**: GitHub Secrets, GitLab CI/CD Variables
-  - **Kubernetes**: Kubernetes Secrets, External Secrets Operator
-  - **On-premise**: HashiCorp Vault
-
-## 🆘 Troubleshooting
-
-* **Error `OSError: [Errno 30] Read-only file system: '/mlflow'`**: 
-  - ⚠️ **You forgot to load environment variables!**
-  - Solution: `export $(cat .env | grep -v '^#' | xargs)` before running the pipeline
-  - MLflow artifacts must go to S3, not local storage
-
-* **S3 auth fail / Access Denied**: 
-  - Check that `.env` is loaded in shell: `echo $AWS_ACCESS_KEY_ID`
-  - Verify IAM permissions on S3 bucket
-  - Verify that `S3_BUCKET_NAME` is defined
-
-* **DVC "tracked by SCM"**: 
-  - Remove from Git tracking (`git rm -r --cached <file>`) before declaring as DVC output
-
-* **Missing images**: 
-  - Expected path is `data/raw/images/image_train/` with pattern `image_<imageid>_product_<productid>.jpg`
-
-* **Docker containers not starting**:
-  - Verify that `.env` file exists at project root
-  - Check logs: `docker logs sep25_cmlops_rakuten-mlflow-1`
-
-* **All predictions returning the same class (e.g., class 10)**:
-  - ✅ **FIXED**: This was caused by passing a DataFrame to the model instead of raw text
-  - The sklearn Pipeline expects a list/array of strings, not a DataFrame
-  - Solution: Pass `model.predict([text])` instead of `model.predict(pd.DataFrame({"text": [text]}))`
-  - After fix, restart API: `docker-compose -f docker-compose.api.yml up --build -d`
-
-## 👨‍💻 About This Project
-
-**Skills Demonstrated**:
-- ✅ Orchestration with Prefect
-- ✅ Experiment tracking with MLflow + PostgreSQL
-- ✅ Data and model versioning with DVC + Dagshub
-- ✅ Model serving API with FastAPI
-- ✅ Containerization with Docker & Docker Compose
-- ✅ Artifact storage on AWS S3
-- ✅ Monitoring with Prometheus + Grafana (metrics, dashboards)
-- ✅ Data drift detection with Evidently
-- ✅ CI/CD with GitHub Actions (tests, deployment)
-- ✅ Git best practices (branches, tags, atomic commits)
-- ✅ Debugging & troubleshooting production issues
-
-**Author**: Sébastien
-
-## 🧪 Testing
-
-A comprehensive testing suite is available to verify all components of the MLOps pipeline.
-
-### Quick Health Check
-```bash
-./quick_test.sh
-```
-
-### Documentation
-
-📖 **Start here:** [TESTING_INDEX.md](TESTING_INDEX.md) - Complete navigation guide and overview
-
-Then choose based on your needs:
-- **[TESTING_CHECKLIST.md](TESTING_CHECKLIST.md)** - Quick reference for daily/weekly testing (5-30 min)
-- **[TESTING_PROCEDURE.md](TESTING_PROCEDURE.md)** - Comprehensive step-by-step guide (30-120 min)
-
-**System Architecture**: See the "System Architecture" section below in this README
-
-### What Gets Tested
-✅ Docker services (5 containers)  
-✅ API endpoints (health, predict, metrics)  
-✅ MLflow tracking and model registry  
-✅ Prometheus + Grafana monitoring  
-✅ DVC pipeline and data versioning  
-✅ Prefect orchestration  
-✅ GitHub Actions workflows  
-✅ Evidently drift detection  
-✅ End-to-end integration  
-
-**Recommended**: Run `./quick_test.sh` daily, follow `TESTING_CHECKLIST.md` weekly.
-
-## 🏗️ System Architecture
-
-### Architecture Overview
-
-The MLOps pipeline consists of 7 integrated layers:
+# Rakuten Product Classification — Local MLOps Pipeline Snapshot (Nov 2025)
+
+> Local-first deployment: everything documented here runs on localhost with Docker, Prefect, and Streamlit. AWS workstreams are tracked separately.
+
+## What This Pipeline Delivers
+- Multi-modal classification (text + image metadata) for Rakuten catalog entries
+- Prefect orchestration covering ingestion → feature engineering → training → batch predictions
+- Data & model versioning with DVC (remote: Dagshub)
+- Experiment tracking and model registry via MLflow + PostgreSQL containers
+- FastAPI inference service with Prometheus metrics & Evidently drift analysis
+- Grafana dashboards and Streamlit “control room” for day-to-day ops
+- CI sanity checks through GitHub Actions (lint, unit tests)
+
+## Architecture at a Glance
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    RAKUTEN MLOps PIPELINE                       │
-└─────────────────────────────────────────────────────────────────┘
-
-1. VERSION CONTROL LAYER
-   ├── Git (Code versioning)
-   └── DVC (Data/model versioning) → Dagshub remote
-
-2. DOCKER INFRASTRUCTURE LAYER
-   ├── docker-compose.api.yml
-   │   ├── PostgreSQL (:5432) → MLflow backend store
-   │   ├── MLflow (:5000) → Experiment tracking server
-   │   └── Rakuten API (:8000) → FastAPI model serving
-   └── docker-compose.monitor.yml
-       ├── Prometheus (:9090) → Metrics collection
-       └── Grafana (:3000) → Dashboards & visualization
-
-3. ML PIPELINE LAYER (DVC)
-   data/raw → ingest → data/interim → features → 
-   data/processed → train → models/ → predict → predictions.csv
-
-4. EXPERIMENT TRACKING LAYER
-   MLflow Tracking Server
-   ├── Backend: PostgreSQL (experiments, runs, metrics)
-   ├── Artifacts: AWS S3 (models, vectorizers, plots)
-   └── Model Registry: rakuten-baseline [Production]
-
-5. MONITORING & DRIFT DETECTION LAYER
-   ├── Prometheus: Custom metrics (predictions, latency, text length)
-   ├── Grafana: Real-time dashboards
-   └── Evidently: Drift detection reports (HTML/JSON)
-
-6. ORCHESTRATION LAYER
-   Prefect
-   ├── pipeline_flow.py: Full ML pipeline
-   └── monitor_and_retrain.py: Drift check + conditional retraining
-       Schedule: Daily at 9:00 UTC
-
-7. CI/CD LAYER (GitHub Actions)
-   ├── python-app.yml: Linting + testing on push
-   ├── deploy_api.yml: Docker build + push to GHCR
-   └── drift_monitor.yml: Daily drift checks + issue creation
+                               ┌─────────────┐
+                               │  data/raw   │
+                               └─────┬───────┘
+                                     │ ingest (Prefect + DVC)
+                                     ▼
+┌──────────────┐   features   ┌──────────────┐   train   ┌──────────────┐
+│ DVC pipeline │────────────▶│ Prefect Flow │──────────▶│   MLflow     │
+└──────┬──────┘              └─────┬────────┘          └────┬─────────┘
+       │ artifacts                   │ metrics/models        │ artifacts
+       ▼                             ▼                       ▼
+┌──────────────┐            ┌──────────────┐        ┌──────────────────┐
+│ data/interim │            │ data/processed│       │ models/ & metrics │
+└──────────────┘            └──────────────┘        └────────┬─────────┘
+                                                              │
+                                                              ▼
+                                                      ┌──────────────┐
+                                                      │ FastAPI API  │
+                                                      └────┬─────────┘
+                                                           │ requests
+                                                           ▼
+         ┌──────────────────────┐      metrics      ┌──────────────────┐
+         │ inference_log.csv    │◀─────────────────│ Prometheus Export │
+         └──────────┬───────────┘                  └────────┬──────────┘
+                    │                                    scrape │
+                    ▼                                         ▼
+              ┌─────────────┐                         ┌────────────────┐
+              │ Evidently   │                         │ Grafana        │
+              └────┬────────┘                         └──────┬─────────┘
+                   │ drift insights                         │ dashboards
+                   ▼                                         ▼
+             Prefect monitor flow                    Streamlit Ops UI
 ```
 
-### Test Coverage Matrix
+The Streamlit app orchestrates Docker services, Prefect flows, MLflow runs, and monitoring dashboards from a single UI.
 
-| Component | Unit Tests | Integration Tests | E2E Tests | Monitoring |
-|-----------|:----------:|:-----------------:|:---------:|:----------:|
-| Data Ingestion | ✅ | ✅ | ✅ | ❌ |
-| Feature Engineering | ✅ | ✅ | ✅ | ❌ |
-| Model Training | ✅ | ✅ | ✅ | ✅ MLflow |
-| Model Prediction | ✅ | ✅ | ✅ | ✅ Logs |
-| FastAPI | ⚠️ | ✅ | ✅ | ✅ Prometheus |
-| MLflow Tracking | ❌ | ✅ | ✅ | ✅ UI |
-| PostgreSQL | ❌ | ✅ | ✅ | ⚠️ |
-| Prometheus | ❌ | ✅ | ✅ | ✅ |
-| Grafana | ❌ | ✅ | ✅ | ✅ |
-| Evidently | ❌ | ✅ | ✅ | ✅ |
-| Prefect | ❌ | ✅ | ✅ | ⚠️ |
-| DVC Pipeline | ❌ | ✅ | ✅ | ❌ |
-| GitHub Actions | ❌ | ✅ | ✅ | ✅ |
+## Quick Start (Localhost)
 
-**Legend**: ✅ = Fully covered | ⚠️ = Partially covered | ❌ = Not applicable
+1. **Clone & install Python deps** (Python 3.11 is required for Prefect):
+   ```bash
+   python3.11 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+2. **Create `.env`** (copy the template and fill values as needed):
+   ```bash
+   cp .env.example .env
+   nano .env
+   ```
+   Required keys today:
+   - `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
+   - `MLFLOW_TRACKING_URI=http://localhost:5000`
+   - `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD`
+   - Optional S3 keys if you replicate artifact sync (not required for local runs)
+3. **Start core services** (PostgreSQL + MLflow + FastAPI API):
+   ```bash
+   docker-compose -f docker-compose.api.yml up -d
+   # MLflow UI → http://localhost:5000
+   # FastAPI docs → http://localhost:8000/docs
+   ```
+4. **Run the end-to-end Prefect flow**:
+   ```bash
+   source .venv/bin/activate
+   export $(cat .env | grep -v '^#' | xargs)
+   python flows/pipeline_flow.py
+   ```
+5. **Bring up monitoring** (Prometheus + Grafana):
+   ```bash
+   docker-compose -f docker-compose.monitor.yml up -d
+   # Prometheus → http://localhost:9090
+   # Grafana → http://localhost:3000 (use credentials from .env)
+   ```
+6. **Generate drift report (optional but recommended after predictions)**:
+   ```bash
+   python src/monitoring/generate_evidently.py
+   open reports/evidently/evidently_report.html
+   ```
+7. **Launch the Streamlit control room**:
+   ```bash
+   pip install -r requirements-streamlit.txt
+   streamlit run streamlit_app/Home.py
+   ```
 
-### Data Flow
+## Operational Cheat-Sheet
 
-```
-USER REQUEST
-     │
-     ▼
-┌─────────────────────┐
-│   FastAPI /predict  │  ◀──── API receives designation + description
-└─────────────────────┘
-     │
-     ├─── Log metrics to Prometheus (predictions_total, latency, text_len)
-     ├─── Log inference to CSV (for drift detection)
-     │
-     ▼
-┌─────────────────────┐
-│ Load Model from     │  ◀──── Fetch "rakuten-baseline" [Production]
-│ MLflow Registry     │        from MLflow Model Registry
-└─────────────────────┘
-     │
-     ▼
-┌─────────────────────┐
-│ Predict with        │  ◀──── sklearn Pipeline (TfidfVectorizer + Model)
-│ sklearn Pipeline    │
-└─────────────────────┘
-     │
-     ▼
-RETURN PREDICTION (product type code)
-```
+**Prefect flows**
+- `flows/pipeline_flow.py` — orchestrates ingest → preprocess → train → predict.
+- `flows/monitor_and_retrain.py` — checks drift (Evidently) and triggers retrain.
 
-### Critical Paths
+**DVC**
+- `dvc repro` reproduces the exact pipeline tracked in `dvc.yaml`.
+- `dvc push` uploads artifacts to Dagshub when credentials are configured.
 
-**Path 1: Training to Production**
-```
-Data (DVC) → Features → Train (MLflow) → Register Model → 
-API loads model → Predict
-```
+**FastAPI service**
+- Exposed at `http://localhost:8000` with `/predict`, `/health`, `/metrics` endpoints.
+- Loads latest production model from MLflow registry (tagged via Prefect run).
 
-**Path 2: Monitoring & Alerting**
-```
-API /predict → Prometheus scrapes → Grafana displays → 
-Drift check (Evidently) → GitHub Issue created (if drift)
-```
+**Monitoring stack**
+- Prometheus scrapes FastAPI metrics and custom exporters.
+- Grafana dashboards pre-provisioned under `monitoring/` configs.
+- Evidently compares `data/monitoring/inference_log.csv` against reference data.
 
-**Path 3: CI/CD Deployment**
-```
-Code push → GitHub Actions → Tests pass → Docker build → 
-Push to GHCR → Deploy
-```
+**Streamlit app**
+- Start/stop Docker services, launch Prefect flows, inspect MLflow runs.
+- Useful scripts: `run_streamlit.sh` (local helper).
 
-## 📌 License
+## Testing & CI
+- Quick smoke test: `./quick_test.sh`
+- Unit/integration tests: `pytest`
+- GitHub Actions runs lint + tests on every push to `Dev` and `master`.
 
-See `LICENSE`.
+## Troubleshooting (Local Only)
+- **Missing `.env` variables** → containers fail to start or MLflow writes locally. Re-run `export $(cat .env ...)` in each shell.
+- **Model artifacts not found** → run `python flows/pipeline_flow.py` to refresh model + metrics.
+- **Grafana empty panels** → ensure `docker-compose.monitor.yml` is running and Prometheus can reach `http://rakuten_api:8000/metrics` inside the network.
+- **Streamlit cannot control Docker** → run the app with privileges to access the local Docker socket.
+
+## Future Work (Out of Scope For This Snapshot)
+- Dedicated AWS ECS/Fargate deployments (MLflow + API)
+- Route53/HTTPS hardening
+- Automated model promotions via MLflow REST API
+- Cloud-native observability (CloudWatch alarms, managed Prometheus/Grafana)
+
+## License
+
+See `LICENSE` for full terms.
 
