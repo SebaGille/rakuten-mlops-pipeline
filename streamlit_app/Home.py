@@ -9,6 +9,7 @@ Author: Sébastien
 import streamlit as st
 from pathlib import Path
 import sys
+import textwrap
 
 # Add parent directory to path for imports
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -122,12 +123,13 @@ def main():
         An **interactive prototype** showcasing a complete MLOps pipeline for product classification.
         
         This demo lets you:
-        - Verify Docker infrastructure required for the prototype
+        - Explore the cloud-native architecture now running on AWS (or mirror it locally with Docker Compose)
+        - Verify the infrastructure components required for the prototype
         - Select a sample of data from the Rakuten dataset and train a model
         - Make real-time predictions using your model and your own product
-        - Monitor model performance
+        - Monitor model performance over time
         
-        Behind the scene, a complete MLOps pipeline is at work, tracking training dataset, model weights and artifacts, promoting best models...
+        Behind the scenes, the pipeline tracks datasets, model weights, and artifacts, and promotes the best models end-to-end.
         
         https://github.com/SebaGille/rakuten-mlops-pipeline
         """)
@@ -136,65 +138,50 @@ def main():
     
     # Feature overview
     st.markdown("## Features Overview")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
+
+    st.markdown("""
+        ### Infrastructure Command Center
+        - Inspect AWS ECS services, Application Load Balancer targets, and RDS health when running in the cloud
+        - Start/stop the Docker Compose stack and monitor container health when running from a local clone
+        - Unified service checks for MLflow, FastAPI, Prefect flows, and supporting storage
+        
+        **Go to:** Infrastructure (sidebar)
+        """)
+
+    st.markdown("""
         ### Dataset Explorer
-        - Browse dataset statistics
-        - Category distribution analysis
-        - Filter and sample data
-        - Visualize product categories
+        - Browse dataset statistics and category distributions
+        - Filter, sample, and download subsets for experimentation
+        - Visualize product categories before training
         
-        **Go to: Dataset** (sidebar)
+        **Go to:** Dataset (sidebar)
         """)
-        
-        st.markdown("""
-        ### Infrastructure Management
-        - Real-time service monitoring
-        - One-click start/stop controls
-        - Container/ECS health checks
-        - Resource usage tracking
-        
-        **Go to: Infrastructure** (sidebar)
-        """)
-    
-    with col2:
-        st.markdown("""
+
+    st.markdown("""
         ### Interactive Training
-        - Browse and filter datasets
-        - Configure hyperparameters
-        - Choose text-only or multimodal
-        - Track experiments in MLflow
-        - Compare models side-by-side
-        - Auto-promote champion models
+        - Configure experiments with text-only or multimodal pipelines
+        - Set hyperparameters and launch Prefect-managed training jobs
+        - Track runs directly in MLflow, compare metrics, and promote champions
         
-        **Go to: Training** (sidebar)
+        **Go to:** Training (sidebar)
         """)
-        
-        st.markdown("""
+
+    st.markdown("""
         ### Live Predictions
-        - Enter product text + upload images
-        - Real-time classification
-        - Confidence scores display
-        - Prediction history tracking
-        - Inference latency metrics
+        - Submit product titles/descriptions and optional images for classification
+        - Retrieve confidence scores and review inference history
+        - Observe latency metrics sourced from the FastAPI service
         
-        **Go to: Predictions** (sidebar)
+        **Go to:** Predictions (sidebar)
         """)
-    
-    with col3:
-        st.markdown("""
+
+    st.markdown("""
         ### Monitoring Dashboard
-        - Drift detection (Evidently)
-        - System metrics tracking
-        - Model performance analysis
-        - Data quality checks
-        - Prometheus metrics (local only)
-        - Grafana dashboards (local only)
+        - Detect data and concept drift with Evidently reports
+        - Review system metrics via Prometheus and Grafana (local deployment only)
+        - Track post-deployment quality with Prefect monitoring flows
         
-        **Go to: Monitoring** (sidebar)
+        **Go to:** Monitoring (sidebar)
         """)
     
     st.markdown("---")
@@ -206,14 +193,14 @@ def main():
         st.info(f"""
         **AWS Deployment Detected**
         
-        This application is running on **AWS ECS** with the following configuration:
+        This application is running on a **cloud-native stack**:
         - **Load Balancer:** {AWS_ALB_URL}
-        - **Services:** MLflow and FastAPI API running on ECS
-        - **Database:** AWS RDS (PostgreSQL)
-        - **Storage:** S3 for model artifacts
+        - **Compute:** AWS ECS services (Fargate) for MLflow + FastAPI
+        - **Database:** Amazon RDS for MLflow backend store
+        - **Storage:** Amazon S3 for datasets and model artifacts
+        - **Orchestration:** Prefect flows triggered from the pipeline layer
         
-        **Note:** Grafana and Prometheus monitoring are not available in AWS deployment.
-        For full monitoring capabilities, use the local deployment with Docker Compose.
+        Grafana and Prometheus collectors are only bundled with the local Docker deployment. To inspect those dashboards, clone the repository and launch the app locally.
         """)
     else:
         st.info("""
@@ -232,6 +219,44 @@ def main():
         docker-compose -f docker-compose.monitor.yml up -d
         ```
         """)
+
+    st.markdown("### Architecture Overview")
+
+    architecture_diagram = textwrap.dedent("""
+                               ┌─────────────┐
+                               │  data/raw   │
+                               └─────┬───────┘
+                                     │ ingest (Prefect + DVC)
+                                     ▼
+┌──────────────┐   features   ┌──────────────┐   train   ┌──────────────┐
+│ DVC pipeline │────────────▶│ Prefect Flow │──────────▶│   MLflow     │
+└──────┬──────┘              └─────┬────────┘          └────┬─────────┘
+       │ artifacts                   │ metrics/models        │ artifacts
+       ▼                             ▼                       ▼
+┌──────────────┐            ┌──────────────┐        ┌──────────────────┐
+│ data/interim │            │ data/processed│       │ models/ & metrics │
+└──────────────┘            └──────────────┘        └────────┬─────────┘
+                                                              │
+                                                              ▼
+                                                      ┌──────────────┐
+                                                      │ FastAPI API  │
+                                                      └────┬─────────┘
+                                                           │ requests
+                                                           ▼
+         ┌──────────────────────┐      metrics      ┌──────────────────┐
+         │ inference_log.csv    │◀─────────────────│ Prometheus Export │
+         └──────────┬───────────┘                  └────────┬──────────┘
+                    │                                    scrape │
+                    ▼                                         ▼
+              ┌─────────────┐                         ┌────────────────┐
+              │ Evidently   │                         │ Grafana        │
+              └────┬────────┘                         └──────┬─────────┘
+                   │ drift insights                         │ dashboards
+                   ▼                                         ▼
+             Prefect monitor flow                    Streamlit Ops UI
+    """)
+
+    st.code(architecture_diagram, language="text")
     
     st.markdown("---")
     
