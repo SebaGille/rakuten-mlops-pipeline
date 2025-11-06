@@ -22,6 +22,12 @@ Pillow>=10.0.0
 # Lightweight scikit-learn for demo predictions
 scikit-learn>=1.3.0,<1.6.0
 
-# Optional: Lightweight MLflow client (without server components)
-# mlflow-skinny>=2.10.0
+# Model serialization (required for training script)
+joblib>=1.3.0
+
+# Scientific computing (required for training script)
+scipy>=1.10.0
+
+# MLflow for experiment tracking (required for training script)
+mlflow>=2.10.0
 

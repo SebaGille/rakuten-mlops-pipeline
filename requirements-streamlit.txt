@@ -22,6 +22,15 @@ requests==2.31.0
 # MLflow integration
 mlflow>=2.10.0
 
+# Model serialization (required for training script)
+joblib>=1.3.0
+
+# Scientific computing (required for training script)
+scipy>=1.10.0
+
+# Machine learning (required for training script)
+scikit-learn>=1.3.0
+
 # Image processing
 Pillow>=10.0.0
 
