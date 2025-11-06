@@ -290,6 +290,32 @@ def main():
     # --- MLflow setup ---
     print(f"\nConnecting to MLflow at: {MLFLOW_URI}")
     try:
+        # Configure host-based routing for AWS ALB (same fix as MLflowManager)
+        mlflow_host = os.getenv("MLFLOW_HOST", "mlflow.rakuten.dev")
+        if mlflow_host:
+            try:
+                import requests
+                from functools import wraps
+                
+                # Store original request method
+                original_request = requests.Session.request
+                tracking_uri_base = MLFLOW_URI.rstrip("/")
+                
+                @wraps(original_request)
+                def request_with_host_header(session_self, method, url, *args, **kwargs):
+                    # If the URL matches our tracking URI, add Host header for host-based routing
+                    if tracking_uri_base and url.startswith(tracking_uri_base):
+                        if 'headers' not in kwargs:
+                            kwargs['headers'] = {}
+                        kwargs['headers']['Host'] = mlflow_host
+                    return original_request(session_self, method, url, *args, **kwargs)
+                
+                # Patch the Session class to add Host header
+                requests.Session.request = request_with_host_header
+                print(f"Configured host-based routing with Host header: {mlflow_host}")
+            except Exception as e:
+                print(f"Warning: Failed to configure Host header for host-based routing: {e}")
+        
         mlflow.set_tracking_uri(MLFLOW_URI)
         
         # Try to verify connection by creating/getting experiment

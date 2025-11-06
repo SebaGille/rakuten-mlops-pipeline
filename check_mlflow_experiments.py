@@ -11,6 +11,7 @@ from mlflow.exceptions import MlflowException
 def main():
     # Get tracking URI from environment or use default
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
+    mlflow_host = os.getenv("MLFLOW_HOST", "mlflow.rakuten.dev")
     
     print("=" * 70)
     print("MLflow Experiments Diagnostic Tool")
@@ -18,6 +19,31 @@ def main():
     print(f"\nTracking URI: {tracking_uri}")
     print(f"Environment variable MLFLOW_TRACKING_URI: {os.getenv('MLFLOW_TRACKING_URI', 'NOT SET')}")
     print()
+    
+    # Configure host-based routing for AWS ALB (same fix as MLflowManager)
+    if mlflow_host:
+        try:
+            import requests
+            from functools import wraps
+            
+            # Store original request method
+            original_request = requests.Session.request
+            tracking_uri_base = tracking_uri.rstrip("/")
+            
+            @wraps(original_request)
+            def request_with_host_header(session_self, method, url, *args, **kwargs):
+                # If the URL matches our tracking URI, add Host header for host-based routing
+                if tracking_uri_base and url.startswith(tracking_uri_base):
+                    if 'headers' not in kwargs:
+                        kwargs['headers'] = {}
+                    kwargs['headers']['Host'] = mlflow_host
+                return original_request(session_self, method, url, *args, **kwargs)
+            
+            # Patch the Session class to add Host header
+            requests.Session.request = request_with_host_header
+            print(f"Configured host-based routing with Host header: {mlflow_host}\n")
+        except Exception as e:
+            print(f"Warning: Failed to configure Host header for host-based routing: {e}\n")
     
     try:
         # Initialize client
