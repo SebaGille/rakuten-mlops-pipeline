@@ -157,14 +157,6 @@ def _detect_deployment_mode() -> str:
 
 # Main content
 def main():
-    # Debug deployment context (temporary)
-    st.write({
-        "STREAMLIT_RUNTIME_ENVIRONMENT": os.getenv("STREAMLIT_RUNTIME_ENVIRONMENT"),
-        "STREAMLIT_SERVER_URL": os.getenv("STREAMLIT_SERVER_URL"),
-        "STREAMLIT_SERVER_ADDRESS": os.getenv("STREAMLIT_SERVER_ADDRESS"),
-        "browser.serverAddress": st.get_option("browser.serverAddress"),
-        "AWS_ALB_URL": AWS_ALB_URL,
-    })
 
     # Hero section
     st.markdown('<h1 class="main-title"> Rakuten MLOps Showcase</h1>', unsafe_allow_html=True)
