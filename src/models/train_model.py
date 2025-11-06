@@ -288,8 +288,37 @@ def main():
     print(f"Test set: {len(X_text_test)} samples")
 
     # --- MLflow setup ---
-    mlflow.set_tracking_uri(MLFLOW_URI)
-    mlflow.set_experiment(EXPERIMENT_NAME)
+    print(f"\nConnecting to MLflow at: {MLFLOW_URI}")
+    try:
+        mlflow.set_tracking_uri(MLFLOW_URI)
+        
+        # Try to verify connection by creating/getting experiment
+        from mlflow.tracking import MlflowClient
+        client = MlflowClient(tracking_uri=MLFLOW_URI)
+        
+        # Try to get or create experiment
+        try:
+            experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
+            if experiment is None:
+                print(f"Experiment '{EXPERIMENT_NAME}' not found, creating it...")
+                experiment_id = client.create_experiment(EXPERIMENT_NAME)
+                print(f"Created experiment '{EXPERIMENT_NAME}' with ID: {experiment_id}")
+            else:
+                print(f"Found experiment '{EXPERIMENT_NAME}' with ID: {experiment.experiment_id}")
+        except Exception as e:
+            print(f"Warning: Could not get/create experiment: {e}")
+            print("Attempting to continue with mlflow.set_experiment()...")
+            try:
+                mlflow.set_experiment(EXPERIMENT_NAME)
+            except Exception as e2:
+                print(f"Error: Failed to set experiment: {e2}")
+                print(f"MLflow server may not be accessible at {MLFLOW_URI}")
+                print("Training will continue but MLflow logging will be disabled.")
+                raise RuntimeError(f"MLflow connection failed: {e2}")
+    except Exception as e:
+        print(f"Error: Failed to connect to MLflow at {MLFLOW_URI}: {e}")
+        print("Training will continue but MLflow logging will be disabled.")
+        raise RuntimeError(f"MLflow connection failed: {e}")
 
     # Use parameters from environment variables (configured in UI)
     vec_params = {"max_features": max_features, "ngram_range": ngram_range}

@@ -258,6 +258,39 @@ class TrainingManager:
                 'USE_IMAGES': str(config.get('use_images', True)),
             }
             
+            # Add MLflow tracking URI if available
+            try:
+                import streamlit as st
+                try:
+                    from streamlit_app.utils.constants import MLFLOW_TRACKING_URI
+                    env_vars['MLFLOW_TRACKING_URI'] = MLFLOW_TRACKING_URI
+                except (ImportError, AttributeError):
+                    # Fallback to environment variable
+                    mlflow_uri = os.getenv("MLFLOW_TRACKING_URI")
+                    if mlflow_uri:
+                        env_vars['MLFLOW_TRACKING_URI'] = mlflow_uri
+            except ImportError:
+                # Not in Streamlit context, use environment variable
+                mlflow_uri = os.getenv("MLFLOW_TRACKING_URI")
+                if mlflow_uri:
+                    env_vars['MLFLOW_TRACKING_URI'] = mlflow_uri
+            
+            # Add S3 configuration if available
+            try:
+                import streamlit as st
+                s3_bucket = st.secrets.get("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
+                s3_prefix = st.secrets.get("S3_DATA_PREFIX", os.getenv("S3_DATA_PREFIX", "data/"))
+                if s3_bucket:
+                    env_vars['S3_DATA_BUCKET'] = s3_bucket
+                    env_vars['S3_DATA_PREFIX'] = s3_prefix
+            except (ImportError, AttributeError):
+                s3_bucket = os.getenv("S3_DATA_BUCKET")
+                s3_prefix = os.getenv("S3_DATA_PREFIX")
+                if s3_bucket:
+                    env_vars['S3_DATA_BUCKET'] = s3_bucket
+                if s3_prefix:
+                    env_vars['S3_DATA_PREFIX'] = s3_prefix
+            
             # Add hyperparameters
             if 'hyperparams' in config:
                 for key, value in config['hyperparams'].items():

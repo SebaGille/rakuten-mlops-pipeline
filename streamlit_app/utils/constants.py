@@ -53,27 +53,36 @@ def _alb_prefixed(path: str) -> str:
     return ""
 
 
-# Service URLs (override via environment variables for cloud mode)
+# Service URLs (override via environment variables or Streamlit secrets for cloud mode)
 # MLFLOW_TRACKING_URI: Tracking URI for MLflow client (uses host-based routing)
 # MLFLOW_URL: Full URL for UI links (same as tracking URI)
 # Note: ALB is configured for host-based routing using mlflow.rakuten.dev or mlflow.rakuten.local
 # When AWS_ALB_URL is set, we use the ALB URL with Host header for host-based routing
-MLFLOW_HOST = os.getenv("MLFLOW_HOST", "mlflow.rakuten.dev")
+
+def _get_config_value(key: str, default: str = "") -> str:
+    """Get configuration value from Streamlit secrets or environment variables"""
+    try:
+        import streamlit as st
+        return st.secrets.get(key, os.getenv(key, default))
+    except (ImportError, AttributeError, KeyError):
+        return os.getenv(key, default)
+
+MLFLOW_HOST = _get_config_value("MLFLOW_HOST", "mlflow.rakuten.dev")
 # Use ALB URL directly since hostname might not resolve, but set Host header for routing
-MLFLOW_TRACKING_URI = os.getenv(
+MLFLOW_TRACKING_URI = _get_config_value(
     "MLFLOW_TRACKING_URI",
     AWS_ALB_URL.rstrip("/") if AWS_ALB_URL else "http://localhost:5000",
 )
-MLFLOW_URL = os.getenv(
+MLFLOW_URL = _get_config_value(
     "MLFLOW_URL",
     AWS_ALB_URL.rstrip("/") if AWS_ALB_URL else "http://localhost:5000",
 )
-API_URL = os.getenv(
+API_URL = _get_config_value(
     "API_URL",
     _alb_prefixed("api") if AWS_ALB_URL else "http://localhost:8000",
 )
-PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "")
-GRAFANA_URL = os.getenv("GRAFANA_URL", "")
+PROMETHEUS_URL = _get_config_value("PROMETHEUS_URL", "")
+GRAFANA_URL = _get_config_value("GRAFANA_URL", "")
 
 # Docker compose files
 COMPOSE_FILES = {
