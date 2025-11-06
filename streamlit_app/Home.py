@@ -14,12 +14,12 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from streamlit_app.utils.constants import COLORS
+from streamlit_app.utils.constants import COLORS, AWS_ALB_URL
 
 # Page configuration
 st.set_page_config(
     page_title="Rakuten MLOps Showcase",
-    page_icon="🚀",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
@@ -31,7 +31,7 @@ st.set_page_config(
         - Product Management: UX design, user workflows, impact orientation
         - System Design: Complete MLOps pipeline from data to production
         
-        Built with ❤️ using Streamlit, MLflow, FastAPI, Docker, and more.
+        Built with Streamlit, MLflow, FastAPI, Docker, and more.
         """
     }
 )
@@ -137,19 +137,30 @@ def main():
     # Feature overview
     st.markdown("## Features Overview")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.markdown("""
-        ### Infrastructure Management
-        - Real-time service monitoring
-        - One-click start controls
-        - Container health checks
-        - Resource usage tracking
+        ### Dataset Explorer
+        - Browse dataset statistics
+        - Category distribution analysis
+        - Filter and sample data
+        - Visualize product categories
         
-        👉 **Go to: Infrastructure** (sidebar)
+        **Go to: Dataset** (sidebar)
         """)
         
+        st.markdown("""
+        ### Infrastructure Management
+        - Real-time service monitoring
+        - One-click start/stop controls
+        - Container/ECS health checks
+        - Resource usage tracking
+        
+        **Go to: Infrastructure** (sidebar)
+        """)
+    
+    with col2:
         st.markdown("""
         ### Interactive Training
         - Browse and filter datasets
@@ -159,10 +170,9 @@ def main():
         - Compare models side-by-side
         - Auto-promote champion models
         
-        👉 **Go to: Training** (sidebar)
+        **Go to: Training** (sidebar)
         """)
-    
-    with col2:
+        
         st.markdown("""
         ### Live Predictions
         - Enter product text + upload images
@@ -171,18 +181,56 @@ def main():
         - Prediction history tracking
         - Inference latency metrics
         
-        👉 **Go to: Predictions** (sidebar)
+        **Go to: Predictions** (sidebar)
         """)
-        
+    
+    with col3:
         st.markdown("""
         ### Monitoring Dashboard
         - Drift detection (Evidently)
-        - Prometheus metrics
-        - Grafana dashboards
-        - Model performance tracking
+        - System metrics tracking
+        - Model performance analysis
         - Data quality checks
+        - Prometheus metrics (local only)
+        - Grafana dashboards (local only)
         
-        👉 **Go to: Monitoring** (sidebar)
+        **Go to: Monitoring** (sidebar)
+        """)
+    
+    st.markdown("---")
+    
+    # Deployment information
+    st.markdown("## Deployment Information")
+    
+    if AWS_ALB_URL:
+        st.info(f"""
+        **AWS Deployment Detected**
+        
+        This application is running on **AWS ECS** with the following configuration:
+        - **Load Balancer:** {AWS_ALB_URL}
+        - **Services:** MLflow and FastAPI API running on ECS
+        - **Database:** AWS RDS (PostgreSQL)
+        - **Storage:** S3 for model artifacts
+        
+        **Note:** Grafana and Prometheus monitoring are not available in AWS deployment.
+        For full monitoring capabilities, use the local deployment with Docker Compose.
+        """)
+    else:
+        st.info("""
+        **Local Deployment**
+        
+        This application is running **locally** with Docker Compose. The following services are available:
+        - **PostgreSQL:** Database for MLflow backend
+        - **MLflow:** Model tracking and registry (http://localhost:5000)
+        - **FastAPI:** Prediction API (http://localhost:8000)
+        - **Prometheus:** Metrics collection (http://localhost:9090)
+        - **Grafana:** Monitoring dashboards (http://localhost:3000)
+        
+        To start services, use the **Infrastructure** page or run:
+        ```bash
+        docker-compose -f docker-compose.api.yml up -d
+        docker-compose -f docker-compose.monitor.yml up -d
+        ```
         """)
     
     st.markdown("---")
@@ -190,7 +238,7 @@ def main():
     # Footer
     st.markdown("""
     <div style='text-align: center; color: #666; padding: 2rem 0;'>
-        <p>Built with ❤️ by <strong>Sébastien</strong></p>
+        <p>Built  with ❤️ by <strong>Sébastien</strong></p>
         <p>ML Engineer + Product Manager | Seeking combined ML/Product roles</p>
         <p>
             <a href='https://github.com/sebagille' target='_blank'>GitHub</a> | 
