@@ -54,6 +54,14 @@ def _alb_prefixed(path: str) -> str:
 
 
 # Service URLs (override via environment variables for cloud mode)
+# MLFLOW_TRACKING_URI: Tracking URI for MLflow client (includes /mlflow path for ALB path-based routing)
+# MLFLOW_URL: Full URL for UI links (same as tracking URI, includes /mlflow path prefix)
+# Note: When using ALB path-based routing, MLflow client needs the path-prefixed URL
+# because ALB routes /mlflow/* to the MLflow service
+MLFLOW_TRACKING_URI = os.getenv(
+    "MLFLOW_TRACKING_URI",
+    _alb_prefixed("mlflow") if AWS_ALB_URL else "http://localhost:5000",
+)
 MLFLOW_URL = os.getenv(
     "MLFLOW_URL",
     _alb_prefixed("mlflow") if AWS_ALB_URL else "http://localhost:5000",

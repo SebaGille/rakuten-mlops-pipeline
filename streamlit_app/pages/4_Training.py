@@ -13,7 +13,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from streamlit_app.utils.training_manager import TrainingManager
 from streamlit_app.utils.mlflow_manager import MLflowManager
 from streamlit_app.utils.constants import (
-    PRODUCT_CATEGORIES, MLFLOW_URL, DEFAULT_HYPERPARAMS, SAMPLE_SIZES
+    PRODUCT_CATEGORIES, MLFLOW_URL, MLFLOW_TRACKING_URI, DEFAULT_HYPERPARAMS, SAMPLE_SIZES
 )
 
 st.set_page_config(
@@ -26,10 +26,17 @@ st.set_page_config(
 @st.cache_resource
 def get_managers():
     training_mgr = TrainingManager(PROJECT_ROOT)
-    mlflow_mgr = MLflowManager(MLFLOW_URL)
+    # Use MLFLOW_TRACKING_URI (path-prefixed for ALB routing) for client
+    mlflow_mgr = MLflowManager(MLFLOW_TRACKING_URI)
     return training_mgr, mlflow_mgr
 
-training_manager, mlflow_manager = get_managers()
+# Try to get managers, but clear cache if connection fails
+try:
+    training_manager, mlflow_manager = get_managers()
+except Exception as e:
+    st.error(f"Failed to initialize managers: {e}")
+    st.cache_resource.clear()  # Clear cache on failure
+    st.stop()
 
 # Header
 st.title("Model Training & Experiment Tracking")
@@ -39,8 +46,12 @@ st.markdown("---")
 # Check MLflow connection
 with st.spinner("Checking MLflow connection..."):
     mlflow_connected = mlflow_manager.check_connection()
+    
 if not mlflow_connected:
     st.error("MLflow server is not accessible. Please start the infrastructure first (Infrastructure page).")
+    st.info(f"Attempted to connect to: `{MLFLOW_TRACKING_URI}`")
+    # Clear cache to allow retry on next page load
+    get_managers.clear()
     st.stop()
 
 # ==================== Configure & Train ====================

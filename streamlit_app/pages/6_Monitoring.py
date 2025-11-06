@@ -305,9 +305,9 @@ with tab3:
     
     # Load metrics from MLflow if available
     from streamlit_app.utils.mlflow_manager import MLflowManager
-    from streamlit_app.utils.constants import MLFLOW_URL
+    from streamlit_app.utils.constants import MLFLOW_URL, MLFLOW_TRACKING_URI
     
-    mlflow_manager = MLflowManager(MLFLOW_URL)
+    mlflow_manager = MLflowManager(MLFLOW_TRACKING_URI)
     
     if mlflow_manager.check_connection():
         st.markdown("#### 🏆 Production Model Metrics")
