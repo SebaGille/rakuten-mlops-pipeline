@@ -22,37 +22,61 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize managers
+# Initialize managers with timeout protection
 @st.cache_resource
 def get_managers():
     training_mgr = TrainingManager(PROJECT_ROOT)
     # Use MLFLOW_TRACKING_URI (path-prefixed for ALB routing) for client
+    # MLflowManager now uses lazy initialization to avoid hanging
     mlflow_mgr = MLflowManager(MLFLOW_TRACKING_URI)
     return training_mgr, mlflow_mgr
 
-# Try to get managers, but clear cache if connection fails
-try:
-    training_manager, mlflow_manager = get_managers()
-except Exception as e:
-    st.error(f"Failed to initialize managers: {e}")
-    st.cache_resource.clear()  # Clear cache on failure
-    st.stop()
-
-# Header
+# Header - show immediately to avoid blank page
 st.title("Model Training & Experiment Tracking")
 st.markdown("Configure, train, and compare ML models with full experiment tracking")
 st.markdown("---")
 
+# Try to get managers with timeout protection
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+# Show connection status
+connection_status = st.empty()
+
+with connection_status.container():
+    with st.spinner("Initializing managers..."):
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(get_managers)
+                training_manager, mlflow_manager = future.result(timeout=5)  # 5 second timeout
+        except FutureTimeoutError:
+            connection_status.error("⚠️ Manager initialization timed out. Please check your connection and try again.")
+            connection_status.info(f"Attempted to connect to: `{MLFLOW_TRACKING_URI}`")
+            get_managers.clear()  # Clear cache on timeout
+            st.stop()
+        except Exception as e:
+            connection_status.error(f"⚠️ Failed to initialize managers: {e}")
+            connection_status.info(f"Attempted to connect to: `{MLFLOW_TRACKING_URI}`")
+            get_managers.clear()  # Clear cache on failure
+            st.stop()
+
 # Check MLflow connection
-with st.spinner("Checking MLflow connection..."):
-    mlflow_connected = mlflow_manager.check_connection()
+with connection_status.container():
+    with st.spinner("Checking MLflow connection..."):
+        try:
+            mlflow_connected = mlflow_manager.check_connection()
+        except Exception as e:
+            connection_status.error(f"⚠️ Connection check failed: {e}")
+            mlflow_connected = False
     
-if not mlflow_connected:
-    st.error("MLflow server is not accessible. Please start the infrastructure first (Infrastructure page).")
-    st.info(f"Attempted to connect to: `{MLFLOW_TRACKING_URI}`")
-    # Clear cache to allow retry on next page load
-    get_managers.clear()
-    st.stop()
+    if not mlflow_connected:
+        connection_status.error("❌ MLflow server is not accessible. Please start the infrastructure first (Infrastructure page).")
+        connection_status.info(f"Attempted to connect to: `{MLFLOW_TRACKING_URI}`")
+        # Clear cache to allow retry on next page load
+        get_managers.clear()
+        st.stop()
+    else:
+        connection_status.success("✅ MLflow connection successful!")
+        connection_status.empty()  # Clear the status message
 
 # ==================== Configure & Train ====================
 st.markdown("### Configure & Train Model")

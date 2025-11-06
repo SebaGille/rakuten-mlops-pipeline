@@ -15,25 +15,52 @@ class MLflowManager:
         self.tracking_uri = tracking_uri.rstrip("/")
         # Normalize tracking URI - if it's a base ALB URL, we need to add /mlflow path
         # for path-based routing, but MLflow client handles this automatically
-        mlflow.set_tracking_uri(self.tracking_uri)
-        self.client = MlflowClient(self.tracking_uri)
+        # Set tracking URI (this is non-blocking, just sets a variable)
+        try:
+            mlflow.set_tracking_uri(self.tracking_uri)
+        except Exception as e:
+            # If setting tracking URI fails, log but continue
+            print(f"Warning: Failed to set MLflow tracking URI: {e}")
+        # Don't initialize client immediately - create it lazily to avoid hanging
+        self._client = None
+    
+    @property
+    def client(self) -> MlflowClient:
+        """Lazy initialization of MLflow client to avoid hanging during __init__"""
+        if self._client is None:
+            # Initialize client with timeout protection
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(MlflowClient, self.tracking_uri)
+                    self._client = future.result(timeout=3)  # 3 second timeout for initialization
+            except FutureTimeoutError:
+                raise TimeoutError(f"MLflow client initialization timed out after 3 seconds for {self.tracking_uri}")
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize MLflow client: {e}")
+        return self._client
     
     def _check_mlflow_client_with_timeout(self, timeout_seconds: int = 5) -> Tuple[bool, Optional[Exception]]:
         """Check MLflow client connection with timeout using ThreadPoolExecutor"""
         def _client_check():
             try:
-                self.client.search_experiments(max_results=1)
+                # Access client property (lazy initialization) and make API call
+                client = self.client  # This will trigger lazy initialization with timeout
+                client.search_experiments(max_results=1)
                 return True, None
+            except TimeoutError as e:
+                # Client initialization timed out
+                return False, e
             except Exception as e:
+                # API call failed
                 return False, e
         
         try:
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(_client_check)
-                success, error = future.result(timeout=timeout_seconds)
+                success, error = future.result(timeout=timeout_seconds + 3)  # Add 3s for client init timeout
                 return success, error
         except FutureTimeoutError:
-            return False, TimeoutError(f"MLflow client check timed out after {timeout_seconds} seconds")
+            return False, TimeoutError(f"MLflow client check timed out after {timeout_seconds + 3} seconds")
         except Exception as e:
             return False, e
     
