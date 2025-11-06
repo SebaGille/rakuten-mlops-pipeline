@@ -3,6 +3,7 @@ import mlflow
 import pandas as pd
 from typing import Dict, List, Optional
 import requests
+from urllib.parse import urljoin
 from mlflow.tracking import MlflowClient
 
 
@@ -16,11 +17,32 @@ class MLflowManager:
     
     def check_connection(self) -> bool:
         """Check if MLflow server is accessible"""
+        # First try the official MLflow client API; this works even when the UI
+        # is served behind a path prefix (e.g. ALB forwarding /mlflow → service).
         try:
-            response = requests.get(f"{self.tracking_uri}/health", timeout=5)
-            return response.status_code == 200
-        except Exception:
-            return False
+            self.client.search_experiments(max_results=1)
+            return True
+        except Exception as client_error:
+            last_error = client_error
+        
+        # Fallback to simple HTTP checks on common endpoints.
+        base_url = self.tracking_uri.rstrip("/")
+        urls_to_try = [
+            urljoin(base_url + "/", "health"),
+            base_url,
+            base_url + "/",  # ensure trailing slash variant
+        ]
+        
+        for url in urls_to_try:
+            try:
+                response = requests.get(url, timeout=5, allow_redirects=True)
+                if response.status_code < 400:
+                    return True
+            except requests.RequestException as http_error:
+                last_error = http_error
+        
+        print(f"MLflow connectivity check failed for {self.tracking_uri}: {last_error}")
+        return False
     
     def get_experiments(self) -> List[Dict]:
         """Get all experiments"""
