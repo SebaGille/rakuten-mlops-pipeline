@@ -6,7 +6,6 @@ through a complete MLOps pipeline for product classification.
 
 Author: Sébastien
 """
-import base64
 import streamlit as st
 from pathlib import Path
 import sys
@@ -188,7 +187,7 @@ def main():
     # Deployment information
     st.markdown("## Deployment Information")
     
-    cloud_svg_path = PROJECT_ROOT / "streamlit_app" / "assets" / "cloud_architecture.svg"
+    cloud_image_path = PROJECT_ROOT / "streamlit_app" / "assets" / "cloud_architecture.jpg"
 
     if AWS_ALB_URL:
         st.info(f"""
@@ -235,18 +234,9 @@ def main():
         
         """)
 
-    if cloud_svg_path.exists():
-        try:
-            svg_content = cloud_svg_path.read_text(encoding="utf-8")
-            svg_b64 = base64.b64encode(svg_content.encode("utf-8")).decode("utf-8")
-            st.markdown("### AWS Cloud Architecture Diagram")
-            st.markdown(
-                f"<div style='text-align:center;'><img src='data:image/svg+xml;base64,{svg_b64}' "
-                f"alt='AWS Cloud Architecture' style='max-width:100%; height:auto;'/></div>",
-                unsafe_allow_html=True,
-            )
-        except Exception as exc:  # pragma: no cover - fallback for SVG read issues
-            st.warning(f"Unable to render cloud architecture diagram: {exc}")
+    if cloud_image_path.exists():
+        st.markdown("### AWS Cloud Architecture Diagram")
+        st.image(str(cloud_image_path), use_column_width=True, caption="Cloud-native deployment at a glance")
 
     st.markdown("### Architecture Overview")
 
