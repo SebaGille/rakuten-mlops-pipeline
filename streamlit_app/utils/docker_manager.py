@@ -1,12 +1,12 @@
-"""Docker container management utilities"""
+"""Local Docker container management utilities"""
 import subprocess
 import docker
 from typing import Dict, List, Optional
 import time
 
 
-class DockerManager:
-    """Manage Docker containers and compose services"""
+class LocalDockerManager:
+    """Manage local Docker containers and compose services"""
     
     def __init__(self, project_root: str):
         self.project_root = project_root
@@ -17,17 +17,7 @@ class DockerManager:
             self.client = None
     
     def check_container_status(self, container_name: str) -> Dict:
-        """
-        Check if a container is running and healthy
-        
-        Returns:
-            dict: {
-                'exists': bool,
-                'running': bool,
-                'status': str,
-                'health': str
-            }
-        """
+        """Check if a container is running and healthy."""
         if not self.client:
             return {'exists': False, 'running': False, 'status': 'Docker unavailable', 'health': 'unknown'}
         
@@ -46,7 +36,7 @@ class DockerManager:
             return {'exists': False, 'running': False, 'status': f'error: {str(e)}', 'health': 'unknown'}
     
     def get_all_services_status(self, containers: Dict[str, str]) -> Dict[str, Dict]:
-        """Get status of all monitored containers"""
+        """Get status of all monitored containers."""
         status = {}
         for service_name, container_name in containers.items():
             status[service_name] = self.check_container_status(container_name)
@@ -203,3 +193,6 @@ class DockerManager:
         except Exception as e:
             return False, f"❌ Error: {str(e)}"
 
+
+# Backwards compatibility for existing imports
+DockerManager = LocalDockerManager

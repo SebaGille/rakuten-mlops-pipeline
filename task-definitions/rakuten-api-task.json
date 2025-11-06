@@ -1,0 +1,75 @@
+{
+  "family": "rakuten-api-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::789406175375:role/rakuten-ecs-task-execution-role",
+  "taskRoleArn": "arn:aws:iam::789406175375:role/rakuten-ecs-task-role",
+  "containerDefinitions": [
+    {
+      "name": "rakuten-api",
+      "image": "789406175375.dkr.ecr.eu-west-1.amazonaws.com/rakuten-api:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "AWS_REGION",
+          "value": "eu-west-1"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "POSTGRES_USER",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-1:789406175375:secret:rakuten/db-config-d11wiR:POSTGRES_USER::"
+        },
+        {
+          "name": "POSTGRES_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-1:789406175375:secret:rakuten/db-config-d11wiR:POSTGRES_PASSWORD::"
+        },
+        {
+          "name": "POSTGRES_DB",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-1:789406175375:secret:rakuten/db-config-d11wiR:POSTGRES_DB::"
+        },
+        {
+          "name": "DB_HOST",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-1:789406175375:secret:rakuten/db-config-d11wiR:DB_HOST::"
+        },
+        {
+          "name": "DB_PORT",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-1:789406175375:secret:rakuten/db-config-d11wiR:DB_PORT::"
+        },
+        {
+          "name": "MLFLOW_TRACKING_URI",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-1:789406175375:secret:rakuten/mlflow-config-bBbRYF:MLFLOW_TRACKING_URI::"
+        },
+        {
+          "name": "MODEL_NAME",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-1:789406175375:secret:rakuten/mlflow-config-bBbRYF:MODEL_NAME::"
+        },
+        {
+          "name": "MODEL_STAGE",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-1:789406175375:secret:rakuten/mlflow-config-bBbRYF:MODEL_STAGE::"
+        },
+        {
+          "name": "S3_BUCKET_NAME",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-1:789406175375:secret:rakuten/mlflow-config-bBbRYF:S3_BUCKET_NAME::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/rakuten-api",
+          "awslogs-region": "eu-west-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

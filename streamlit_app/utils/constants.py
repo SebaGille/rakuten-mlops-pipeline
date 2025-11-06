@@ -1,4 +1,6 @@
-"""Constants and configuration for Streamlit application"""
+"""Constants and configuration for Streamlit application."""
+
+import os
 from pathlib import Path
 
 # Project paths
@@ -38,11 +40,30 @@ PRODUCT_CATEGORIES = {
     2905: "🧹 Cleaning Products"
 }
 
-# Service URLs
-MLFLOW_URL = "http://localhost:5000"
-API_URL = "http://localhost:8000"
-PROMETHEUS_URL = "http://localhost:9090"
-GRAFANA_URL = "http://localhost:3000"
+# AWS / ECS defaults
+AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
+AWS_ECS_CLUSTER = os.getenv("AWS_ECS_CLUSTER", "rakuten-mlops-cluster")
+AWS_ALB_URL = os.getenv("AWS_ALB_URL", "")
+AWS_RDS_INSTANCE_ID = os.getenv("RDS_INSTANCE_ID", "rakuten-mlflow-db")
+
+
+def _alb_prefixed(path: str) -> str:
+    if AWS_ALB_URL:
+        return f"{AWS_ALB_URL.rstrip('/')}/{path.lstrip('/')}"
+    return ""
+
+
+# Service URLs (override via environment variables for cloud mode)
+MLFLOW_URL = os.getenv(
+    "MLFLOW_URL",
+    _alb_prefixed("mlflow") if AWS_ALB_URL else "http://localhost:5000",
+)
+API_URL = os.getenv(
+    "API_URL",
+    _alb_prefixed("api") if AWS_ALB_URL else "http://localhost:8000",
+)
+PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "")
+GRAFANA_URL = os.getenv("GRAFANA_URL", "")
 
 # Docker compose files
 COMPOSE_FILES = {

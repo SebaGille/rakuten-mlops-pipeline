@@ -13,6 +13,9 @@ plotly==5.18.0
 # Docker management
 docker==7.0.0
 
+# AWS integrations
+boto3>=1.34.0
+
 # HTTP requests
 requests==2.31.0
 
