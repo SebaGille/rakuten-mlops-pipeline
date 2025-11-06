@@ -6,6 +6,7 @@ through a complete MLOps pipeline for product classification.
 
 Author: Sébastien
 """
+import os
 import streamlit as st
 from pathlib import Path
 import sys
@@ -105,6 +106,35 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Helpers
+def _detect_deployment_mode() -> str:
+    """Return 'cloud' when running on Streamlit Cloud / ALB, else 'local'."""
+
+    runtime_env = os.getenv("STREAMLIT_RUNTIME_ENVIRONMENT", "").lower()
+    if runtime_env == "cloud":
+        return "cloud"
+
+    server_url = os.getenv("STREAMLIT_SERVER_URL", "")
+    if server_url and "streamlit.app" in server_url.lower():
+        return "cloud"
+
+    server_address = os.getenv("STREAMLIT_SERVER_ADDRESS", "")
+    if server_address and "streamlit.app" in server_address.lower():
+        return "cloud"
+
+    try:
+        browser_host = st.get_option("browser.serverAddress")
+    except Exception:  # pragma: no cover - defensive fallback
+        browser_host = ""
+    if isinstance(browser_host, str) and "streamlit.app" in browser_host.lower():
+        return "cloud"
+
+    if AWS_ALB_URL:
+        return "cloud"
+
+    return "local"
+
+
 # Main content
 def main():
     # Hero section
@@ -188,13 +218,16 @@ def main():
     st.markdown("## Deployment Information")
     
     cloud_image_path = PROJECT_ROOT / "streamlit_app" / "assets" / "cloud_architecture.jpg"
+    deployment_mode = _detect_deployment_mode()
+    is_cloud = deployment_mode == "cloud"
 
-    if AWS_ALB_URL:
+    if is_cloud:
+        alb_display = AWS_ALB_URL or "Set AWS_ALB_URL to surface the load balancer URL"
         st.info(f"""
         **AWS Deployment Detected**
         
         This application is running on the managed cloud stack described in the README:
-        - **Application Load Balancer:** {AWS_ALB_URL}
+        - **Application Load Balancer:** {alb_display}
         - **Compute:** ECS Fargate services (`rakuten-api`, `rakuten-mlflow`)
         - **Database:** Amazon RDS (PostgreSQL) for the MLflow backend store
         - **Storage:** Amazon S3 for datasets and MLflow artifacts
@@ -234,7 +267,7 @@ def main():
         
         """)
 
-    if cloud_image_path.exists():
+    if is_cloud and cloud_image_path.exists():
         st.markdown("### AWS Cloud Architecture Diagram")
         st.image(str(cloud_image_path), use_column_width=True, caption="Cloud-native deployment at a glance")
 
