@@ -246,6 +246,13 @@ if error_msg:
     """)
     st.stop()
 
+# Debug: Show all experiments (including Default) for troubleshooting
+if experiments:
+    with st.expander("🔍 Debug: All Experiments (including Default)", expanded=False):
+        st.write(f"Total experiments found: {len(experiments)}")
+        for exp in experiments:
+            st.write(f"- {exp['name']} (ID: {exp['experiment_id']}, Stage: {exp['lifecycle_stage']})")
+
 if experiments:
     # Filter non-default experiments
     exp_names = [exp['name'] for exp in experiments if not exp['name'].startswith('Default')]

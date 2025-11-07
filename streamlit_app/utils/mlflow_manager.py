@@ -203,8 +203,17 @@ class MLflowManager:
             print(f"[MLflowManager] Getting experiments from: {self.tracking_uri}")
             print(f"[MLflowManager] Using Host header: {self.mlflow_host}")
             
-            experiments = self.client.search_experiments()
+            # Use max_results to ensure we get all experiments (default might be limited)
+            experiments = self.client.search_experiments(max_results=1000)
             print(f"[MLflowManager] Successfully retrieved {len(experiments)} experiments")
+            
+            # Debug: Log experiment names
+            if experiments:
+                exp_names = [exp.name for exp in experiments]
+                print(f"[MLflowManager] Experiment names: {exp_names}")
+            else:
+                print(f"[MLflowManager] Warning: No experiments returned from search_experiments()")
+            
             return [
                 {
                     'experiment_id': exp.experiment_id,
