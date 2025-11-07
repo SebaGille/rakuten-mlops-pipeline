@@ -208,9 +208,17 @@ class MLflowManager:
             self._configure_mlflow_host_header()
             
             # Use max_results to ensure we get all experiments (default might be limited)
+            # Also try without view_type first, then with view_type=ALL if needed
             print(f"[MLflowManager] Calling search_experiments(max_results=1000)...")
-            experiments = self.client.search_experiments(max_results=1000)
-            print(f"[MLflowManager] Successfully retrieved {len(experiments)} experiments")
+            try:
+                # Try to get all experiments (active and deleted)
+                experiments = self.client.search_experiments(max_results=1000, view_type="ALL")
+                print(f"[MLflowManager] Successfully retrieved {len(experiments)} experiments (view_type=ALL)")
+            except Exception as e:
+                # Fallback to default (active only) if view_type=ALL is not supported
+                print(f"[MLflowManager] view_type=ALL not supported, trying default: {e}")
+                experiments = self.client.search_experiments(max_results=1000)
+                print(f"[MLflowManager] Successfully retrieved {len(experiments)} experiments (default view)")
             
             # Debug: Log experiment names and details
             if experiments:
