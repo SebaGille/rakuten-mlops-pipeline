@@ -79,15 +79,15 @@ st.set_page_config(
 )
 
 # Header
-st.title("📊 Monitoring & Observability")
+st.title("Monitoring & Observability")
 st.markdown("Monitor model performance, system metrics, and detect data drift")
 st.markdown("---")
 
 # ==================== SECTION 1: System Metrics ====================
-st.markdown("### 🎯 System Metrics Overview")
+st.markdown("### System Metrics Overview")
 
 st.info("""
-📊 **Real-time metrics** are collected by Prometheus from the API service.
+ **Real-time metrics** are collected by Prometheus from the API service.
 
 Metrics include:
 - Request count and latency
@@ -138,7 +138,7 @@ if df_log is not None and not df_log.empty:
     st.markdown("---")
     
     # Predictions over time
-    st.markdown("#### 📈 Predictions Over Time")
+    st.markdown("#### Predictions Over Time")
     
     if 'timestamp' in df_log.columns:
         df_time = df_log.copy()
@@ -163,7 +163,7 @@ if df_log is not None and not df_log.empty:
     st.markdown("---")
     
     # Class distribution
-    st.markdown("#### 🏷️ Prediction Class Distribution")
+    st.markdown("#### Prediction Class Distribution")
     
     if 'predicted_class' in df_log.columns:
         class_dist = df_log['predicted_class'].value_counts().head(15)
@@ -188,7 +188,7 @@ if df_log is not None and not df_log.empty:
     st.markdown("---")
     
     # Text length distribution
-    st.markdown("#### 📏 Input Text Length Distribution")
+    st.markdown("#### Input Text Length Distribution")
     
     col1, col2 = st.columns(2)
     
@@ -226,7 +226,7 @@ else:
 st.markdown("---")
 
 # ==================== SECTION 2: Data Drift ====================
-st.markdown("### 📉 Data Drift Detection")
+st.markdown("### Data Drift Detection")
 
 st.info("""
 **Data drift** occurs when the distribution of input data changes over time, 
@@ -293,7 +293,7 @@ if drift_status:
     
     # Detailed drift information
     if 'drift_by_columns' in drift_status:
-        st.markdown("#### 📊 Drift by Feature")
+        st.markdown("#### Drift by Feature")
         
         drift_details = []
         for col_name, col_drift in drift_status['drift_by_columns'].items():
@@ -328,7 +328,7 @@ if drift_status:
     
     if html_report_available:
         st.markdown("---")
-        st.markdown("#### 📄 Full Evidently Report")
+        st.markdown("#### Full Evidently Report")
         
         st.info(f"""
         A detailed HTML report is available at:
@@ -343,9 +343,9 @@ if drift_status:
         
         # Note: Cannot open file:// URLs on Streamlit Cloud, so just show the path
         if html_report_path.startswith("s3://"):
-            st.info("💡 Download the report from S3 to view it in your browser.")
+            st.info("Download the report from S3 to view it in your browser.")
         elif html_report_path.startswith("/") or "\\" in html_report_path:
-            st.info("💡 Open the report file from your local filesystem to view it in your browser.")
+            st.info("Open the report file from your local filesystem to view it in your browser.")
 
 else:
     st.warning("No drift reports found yet.")
@@ -362,7 +362,7 @@ else:
     """)
     
     # Show how to generate report
-    with st.expander("📋 Manual Drift Report Generation"):
+    with st.expander("Manual Drift Report Generation"):
         st.code("""
 # Generate Evidently drift report
 python src/monitoring/generate_evidently.py
@@ -374,7 +374,7 @@ prefect deployment run "monitor-and-retrain/monitor-and-retrain-daily"
 st.markdown("---")
 
 # ==================== SECTION 3: Model Performance ====================
-st.markdown("### 📈 Model Performance Tracking")
+st.markdown("### Model Performance Tracking")
 
 st.info("""
 Track model performance over time to identify degradation and opportunities for improvement.
@@ -431,7 +431,7 @@ if mlflow_manager.check_connection():
             df_runs = mlflow_manager.get_runs(exp_id, max_results=50)
             
             if not df_runs.empty:
-                st.markdown("#### 📊 Model Performance Over Time")
+                st.markdown("#### Model Performance Over Time")
                 
                 # Metrics over time
                 fig = px.scatter(
@@ -445,7 +445,7 @@ if mlflow_manager.check_connection():
                 st.plotly_chart(fig, width='stretch')
                 
                 # Performance statistics
-                st.markdown("#### 📊 Performance Statistics")
+                st.markdown("#### Performance Statistics")
                 
                 col1, col2 = st.columns(2)
                 
@@ -470,7 +470,7 @@ else:
 st.markdown("---")
 
 # ==================== SECTION 4: External Dashboards ====================
-st.markdown("### 🔗 External Monitoring Dashboards")
+st.markdown("### External Monitoring Dashboards")
 
 st.info("""
 The MLOps pipeline includes several external monitoring tools.
@@ -497,13 +497,13 @@ with col1:
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown(f"[🔗 Open Prometheus]({PROMETHEUS_URL})")
+    st.markdown(f"[Open Prometheus]({PROMETHEUS_URL})")
 
 with col2:
     st.markdown("""
     <div style='background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); 
                 padding: 2rem; border-radius: 10px; color: white;'>
-        <h3 style='color: white;'>📊 Grafana</h3>
+        <h3 style='color: white;'> Grafana</h3>
         <p>Visualization and dashboards</p>
         <p><strong>Port:</strong> 3000</p>
         <p><strong>Features:</strong></p>
@@ -516,7 +516,7 @@ with col2:
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown(f"[🔗 Open Grafana]({GRAFANA_URL})")
+    st.markdown(f"[ Open Grafana]({GRAFANA_URL})")
 
 st.markdown("---")
 
@@ -526,7 +526,7 @@ with col3:
     st.markdown("""
     <div style='background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); 
                 padding: 2rem; border-radius: 10px; color: #333;'>
-        <h3>📊 MLflow UI</h3>
+        <h3> MLflow UI</h3>
         <p>Experiment tracking and model registry</p>
         <p><strong>Port:</strong> 5000</p>
         <p><strong>Features:</strong></p>
@@ -539,7 +539,7 @@ with col3:
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown(f"[🔗 Open MLflow]({MLFLOW_URL})")
+    st.markdown(f"[ Open MLflow]({MLFLOW_URL})")
 
 with col4:
     st.markdown("""
@@ -558,12 +558,12 @@ with col4:
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown(f"[🔗 Open API Docs]({API_URL}/docs)")
+    st.markdown(f"[ Open API Docs]({API_URL}/docs)")
 
 st.markdown("---")
 
 # Monitoring best practices
-with st.expander("📚 Monitoring Best Practices"):
+with st.expander(" Monitoring Best Practices"):
     st.markdown("""
     ### Key Monitoring Principles
     
@@ -596,8 +596,8 @@ with st.expander("📚 Monitoring Best Practices"):
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
-    <p>💡 <strong>Tip:</strong> Enable automated drift monitoring with Prefect for continuous oversight</p>
-    <p>📊 Check dashboards regularly to catch issues early</p>
+    <p> <strong>Tip:</strong> Enable automated drift monitoring with Prefect for continuous oversight</p>
+    <p> Check dashboards regularly to catch issues early</p>
 </div>
 """, unsafe_allow_html=True)
 

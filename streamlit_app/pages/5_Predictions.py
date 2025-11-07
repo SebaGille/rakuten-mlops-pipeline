@@ -28,7 +28,7 @@ def get_prediction_manager():
 prediction_manager = get_prediction_manager()
 
 # Header
-st.title("🔮 Live Prediction Interface")
+st.title("Live Prediction Interface")
 st.markdown("Make real-time product category predictions using the deployed model")
 st.markdown("---")
 
@@ -38,11 +38,11 @@ if not api_healthy:
     st.error("⚠️ Prediction API is not accessible")
     st.info(f"**Expected API at:** `{API_URL}`")
     if error_msg:
-        with st.expander("🔍 Error Details", expanded=True):
+        with st.expander("Error Details", expanded=True):
             st.text(error_msg)
     st.info("""
     **Troubleshooting Steps:**
-    1. Check the **🐳 Infrastructure** page to see if the API service is running
+    1. Check the ** Infrastructure** page to see if the API service is running
     2. For AWS deployments, verify the ECS service is healthy
     3. Check that the API_HOST environment variable is set correctly
     4. Verify network connectivity to the ALB
@@ -57,7 +57,7 @@ st.markdown("---")
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    st.markdown("### 📝 Product Information")
+    st.markdown("### Product Information")
     
     # Text inputs
     designation = st.text_input(
@@ -75,7 +75,7 @@ with col1:
     
     # Image upload
     st.markdown("---")
-    st.markdown("### 📸 Product Image (Optional)")
+    st.markdown("### Product Image (Optional)")
     
     uploaded_image = st.file_uploader(
         "Upload product image:",
@@ -100,7 +100,7 @@ with col1:
     st.markdown("---")
     
     # Example inputs
-    with st.expander("💡 Use example inputs"):
+    with st.expander("Use example inputs"):
         example_choice = st.selectbox(
             "Select an example:",
             [
@@ -147,10 +147,10 @@ with col1:
     st.markdown("---")
     
     # Prediction button
-    predict_button = st.button("🔮 PREDICT CATEGORY", type="primary", width='stretch')
+    predict_button = st.button("PREDICT CATEGORY", type="primary", width='stretch')
 
 with col2:
-    st.markdown("### 📊 Prediction Results")
+    st.markdown("### Prediction Results")
     
     if predict_button:
         if not designation or len(designation) < 3:
@@ -176,7 +176,7 @@ with col2:
                 st.markdown(f"""
                 <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                             padding: 2rem; border-radius: 10px; color: white; text-align: center;'>
-                    <h2 style='margin: 0; color: white;'>🏷️ {category_name}</h2>
+                    <h2 style='margin: 0; color: white;'> {category_name}</h2>
                     <p style='font-size: 1.5rem; margin: 0.5rem 0;'>Category Code: {predicted_class}</p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -194,7 +194,7 @@ with col2:
                 
                 # Confidence scores (if available)
                 if 'confidence' in result:
-                    st.markdown("#### 🎯 Confidence Scores")
+                    st.markdown("#### Confidence Scores")
                     st.info("Top 3 predictions:")
                     # This would show top 3 predictions if API returns them
                     # For now, placeholder
@@ -203,7 +203,7 @@ with col2:
                         st.progress(conf, text=f"{i}. {PRODUCT_CATEGORIES.get(cat, cat)}: {conf:.2%}")
                 
                 # Input summary
-                with st.expander("📋 View input details"):
+                with st.expander("View input details"):
                     st.markdown(f"""
                     **Designation:** {designation}
                     
@@ -223,23 +223,23 @@ with col2:
     
     else:
         # Show placeholder
-        st.info("👆 Fill in the product information and click 'PREDICT CATEGORY' to see results")
+        st.info("Fill in the product information and click 'PREDICT CATEGORY' to see results")
         
         # Show example of what results look like
-        st.markdown("#### 📊 Expected Output:")
+        st.markdown("#### Expected Output:")
         st.markdown("""
         When you make a prediction, you'll see:
-        - 🏷️ **Predicted Category** (with confidence)
-        - ⏱️ **Prediction Time**
-        - 📊 **Top 3 Category Predictions** (if available)
-        - 📋 **Input Summary**
+        - **Predicted Category** (with confidence)
+        - **Prediction Time**
+        - **Top 3 Category Predictions** (if available)
+        - **Input Summary**
         """)
 
 # Below the main columns
 st.markdown("---")
 
 # Prediction History
-st.markdown("### 📜 Recent Predictions")
+st.markdown("### Recent Predictions")
 
 show_history = st.checkbox("Show prediction history", value=True)
 
@@ -308,7 +308,7 @@ if show_history:
             st.plotly_chart(fig, width='stretch')
         
         # Clear history button
-        if st.button("🗑️ Clear Prediction History", type="secondary"):
+        if st.button("Clear Prediction History", type="secondary"):
             if prediction_manager.clear_prediction_history():
                 st.success("✅ Prediction history cleared")
                 time.sleep(1)
@@ -322,9 +322,9 @@ if show_history:
 # Model Information
 st.markdown("---")
 
-with st.expander("ℹ️ Model Information"):
+with st.expander("Model Information"):
     st.markdown("""
-    ### 🤖 Current Production Model
+    ### Current Production Model
     
     **Model Name:** Rakuten Multimodal Classifier
     
@@ -351,14 +351,14 @@ with st.expander("ℹ️ Model Information"):
 
 # API Documentation link
 st.markdown("---")
-st.info(f"💡 **For Developers:** Full API documentation available at [{API_URL}/docs]({API_URL}/docs)")
+st.info(f"**For Developers:** Full API documentation available at [{API_URL}/docs]({API_URL}/docs)")
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
-    <p>💡 <strong>Tip:</strong> Try different product descriptions to see how the model performs</p>
-    <p>📊 All predictions are logged and monitored for data drift</p>
+    <p><strong>Tip:</strong> Try different product descriptions to see how the model performs</p>
+    <p>All predictions are logged and monitored for data drift</p>
 </div>
 """, unsafe_allow_html=True)
 
