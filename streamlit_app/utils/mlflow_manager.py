@@ -9,12 +9,26 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 import os
 import logging
 
+# Import configuration
+from streamlit_app.utils.config import (
+    MLFLOW_CLIENT_INIT_TIMEOUT,
+    MLFLOW_CONNECTION_TIMEOUT,
+    MLFLOW_REQUEST_TIMEOUT,
+    MLFLOW_MAX_RESULTS
+)
+
 # Import MLFLOW_HOST from constants to ensure it reads from Streamlit secrets
 try:
     from streamlit_app.utils.constants import MLFLOW_HOST
 except ImportError:
     # Fallback if constants module is not available
     MLFLOW_HOST = os.getenv("MLFLOW_HOST", "mlflow.rakuten.dev")
+
+# Import HTTP adapter for host-based routing
+from streamlit_app.utils.http_adapter import patch_mlflow_requests
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 
 class MLflowManager:
@@ -36,94 +50,61 @@ class MLflowManager:
             mlflow.set_tracking_uri(self.tracking_uri)
         except Exception as e:
             # If setting tracking URI fails, log but continue
-            print(f"Warning: Failed to set MLflow tracking URI: {e}")
+            logger.warning(f"Failed to set MLflow tracking URI: {e}")
         # Don't initialize client immediately - create it lazily to avoid hanging
         self._client = None
     
     def _configure_mlflow_host_header(self):
         """Configure MLflow to use custom Host header for host-based routing"""
-        # MLflow uses requests internally. We need to patch the requests library
-        # to add the Host header when making requests to the tracking URI
-        # This is done by monkey-patching the requests.Session class
+        # Use the HTTP adapter module for cleaner patching
         try:
-            import requests
-            from functools import wraps
-            
-            tracking_uri = self.tracking_uri.rstrip("/")
-            mlflow_host = self.mlflow_host
-            
-            # Store original request method if not already stored
-            if not hasattr(requests.Session, '_original_request'):
-                requests.Session._original_request = requests.Session.request
-            
-            # Get the original request method
-            original_request = requests.Session._original_request
-            
-            @wraps(original_request)
-            def request_with_host_header(session_self, method, url, *args, **kwargs):
-                # If the URL matches our tracking URI, add Host header
-                # Normalize URLs for comparison (remove trailing slashes)
-                url_normalized = url.rstrip("/")
-                if tracking_uri and (url_normalized.startswith(tracking_uri) or url.startswith(tracking_uri)):
-                    if 'headers' not in kwargs:
-                        kwargs['headers'] = {}
-                    # Always set Host header (don't check if already set, as it might be wrong)
-                    kwargs['headers']['Host'] = mlflow_host
-                    # Log full request details for debugging
-                    headers_str = ', '.join([f"{k}: {v}" for k, v in kwargs.get('headers', {}).items()])
-                    print(f"[MLflowManager] Request: {method} {url}")
-                    print(f"[MLflowManager] Headers: {headers_str}")
-                    print(f"[MLflowManager] Added Host header: {mlflow_host} for URL: {url} (tracking_uri: {tracking_uri})")
-                else:
-                    # Log when URL doesn't match (for debugging)
-                    if '/api/2.0/mlflow/' in url:
-                        print(f"[MLflowManager] WARNING: URL doesn't match tracking_uri: {url} (tracking_uri: {tracking_uri})")
-                return original_request(session_self, method, url, *args, **kwargs)
-            
-            # Patch the Session class
-            requests.Session.request = request_with_host_header
-            print(f"[MLflowManager] Configured host-based routing: {tracking_uri} -> Host: {mlflow_host}")
+            patch_mlflow_requests(self.tracking_uri, self.mlflow_host)
+            logger.info(f"Configured host-based routing: {self.tracking_uri} -> Host: {self.mlflow_host}")
         except Exception as e:
-            print(f"[MLflowManager] Warning: Failed to configure Host header: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.warning(f"Failed to configure Host header: {e}", exc_info=True)
+    
+    def _init_client_sync(self) -> MlflowClient:
+        """Initialize MLflow client synchronously (no Streamlit calls)"""
+        # Ensure host-based routing is configured before creating client
+        self._configure_mlflow_host_header()
+        
+        logger.info(f"Initializing MLflowClient with tracking_uri: {self.tracking_uri}")
+        logger.debug(f"Host header will be: {self.mlflow_host}")
+        
+        # Initialize client directly (no thread needed here)
+        return MlflowClient(self.tracking_uri)
     
     @property
     def client(self) -> MlflowClient:
         """Lazy initialization of MLflow client to avoid hanging during __init__"""
         if self._client is None:
-            # Ensure host-based routing is configured before creating client
-            # Re-apply the patch in case it was overwritten
-            self._configure_mlflow_host_header()
-            
-            # Debug: Log client initialization
-            print(f"[MLflowManager] Initializing MLflowClient with tracking_uri: {self.tracking_uri}")
-            print(f"[MLflowManager] Host header will be: {self.mlflow_host}")
-            
-            # Initialize client with timeout protection
+            # Initialize client with timeout protection in a thread
+            # Note: This avoids ScriptRunContext warnings by not using Streamlit in the thread
             try:
                 with ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(MlflowClient, self.tracking_uri)
-                    self._client = future.result(timeout=3)  # 3 second timeout for initialization
-                print(f"[MLflowManager] MLflowClient initialized successfully")
+                    future = executor.submit(self._init_client_sync)
+                    self._client = future.result(timeout=MLFLOW_CLIENT_INIT_TIMEOUT)
+                logger.info("MLflowClient initialized successfully")
             except FutureTimeoutError:
-                error_msg = f"MLflow client initialization timed out after 3 seconds for {self.tracking_uri}"
-                print(f"[MLflowManager] {error_msg}")
+                error_msg = f"MLflow client initialization timed out after {MLFLOW_CLIENT_INIT_TIMEOUT} seconds for {self.tracking_uri}"
+                logger.error(error_msg)
                 raise TimeoutError(error_msg)
             except Exception as e:
                 error_msg = f"Failed to initialize MLflow client: {e}"
-                print(f"[MLflowManager] {error_msg}")
-                import traceback
-                traceback.print_exc()
+                logger.error(error_msg, exc_info=True)
                 raise RuntimeError(error_msg)
         return self._client
     
-    def _check_mlflow_client_with_timeout(self, timeout_seconds: int = 5) -> Tuple[bool, Optional[Exception]]:
+    def _check_mlflow_client_with_timeout(self, timeout_seconds: int = None) -> Tuple[bool, Optional[Exception]]:
         """Check MLflow client connection with timeout using ThreadPoolExecutor"""
+        if timeout_seconds is None:
+            timeout_seconds = MLFLOW_CONNECTION_TIMEOUT
+        
         def _client_check():
             try:
                 # Access client property (lazy initialization) and make API call
-                client = self.client  # This will trigger lazy initialization with timeout
+                # Note: This runs in a thread, so no Streamlit calls here
+                client = self._client if self._client else self._init_client_sync()
                 client.search_experiments(max_results=1)
                 return True, None
             except TimeoutError as e:
@@ -136,10 +117,11 @@ class MLflowManager:
         try:
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(_client_check)
-                success, error = future.result(timeout=timeout_seconds + 3)  # Add 3s for client init timeout
+                total_timeout = timeout_seconds + MLFLOW_CLIENT_INIT_TIMEOUT
+                success, error = future.result(timeout=total_timeout)
                 return success, error
         except FutureTimeoutError:
-            return False, TimeoutError(f"MLflow client check timed out after {timeout_seconds + 3} seconds")
+            return False, TimeoutError(f"MLflow client check timed out after {total_timeout} seconds")
         except Exception as e:
             return False, e
     
@@ -170,32 +152,33 @@ class MLflowManager:
                     http_success = True
                     break
             except (requests.RequestException, requests.Timeout) as e:
+                logger.debug(f"Health check failed for {url}: {e}")
                 continue
         
         # If HTTP check succeeded, try MLflow client API with timeout
         if http_success:
             try:
-                success, error = self._check_mlflow_client_with_timeout(timeout_seconds=5)
+                success, error = self._check_mlflow_client_with_timeout()
                 if success:
                     return True
                 else:
                     # HTTP worked but client API failed - log but consider server accessible
-                    print(f"MLflow client API check failed (but HTTP succeeded): {error}")
+                    logger.warning(f"MLflow client API check failed (but HTTP succeeded): {error}")
                     return True  # Server is accessible even if client API has issues
             except Exception as e:
-                print(f"MLflow client check exception (but HTTP succeeded): {e}")
+                logger.warning(f"MLflow client check exception (but HTTP succeeded): {e}")
                 return True  # Server is accessible even if client API has issues
         
         # If HTTP checks failed, try MLflow client API as last resort (with timeout)
         try:
-            success, error = self._check_mlflow_client_with_timeout(timeout_seconds=5)
+            success, error = self._check_mlflow_client_with_timeout()
             if success:
                 return True
             else:
-                print(f"MLflow connectivity check failed for {self.tracking_uri}: {error}")
+                logger.error(f"MLflow connectivity check failed for {self.tracking_uri}: {error}")
                 return False
         except Exception as e:
-            print(f"MLflow connectivity check exception for {self.tracking_uri}: {e}")
+            logger.error(f"MLflow connectivity check exception for {self.tracking_uri}: {e}")
             return False
     
     def get_experiments(self) -> Tuple[List[Dict], Optional[str]]:
@@ -208,56 +191,47 @@ class MLflowManager:
             - error_message: Error message if failed, None if successful
         """
         try:
-            # Debug: Log tracking URI and host being used
-            print(f"[MLflowManager] Getting experiments from: {self.tracking_uri}")
-            print(f"[MLflowManager] Using Host header: {self.mlflow_host}")
+            logger.debug(f"Getting experiments from: {self.tracking_uri} with Host: {self.mlflow_host}")
             
             # Ensure host header is configured before making the call
             self._configure_mlflow_host_header()
             
             # Use max_results to ensure we get all experiments (default might be limited)
-            # Also try without view_type first, then with view_type=ALL if needed
-            print(f"[MLflowManager] Calling search_experiments(max_results=1000)...")
             try:
                 # Try to get all experiments (active and deleted)
-                experiments = self.client.search_experiments(max_results=1000, view_type="ALL")
-                print(f"[MLflowManager] Successfully retrieved {len(experiments)} experiments (view_type=ALL)")
-            except TypeError as e:
+                experiments = self.client.search_experiments(max_results=MLFLOW_MAX_RESULTS, view_type="ALL")
+                logger.info(f"Successfully retrieved {len(experiments)} experiments (view_type=ALL)")
+            except TypeError:
                 # Fallback to default (active only) if view_type=ALL is not supported (older MLflow versions)
-                print(f"[MLflowManager] view_type=ALL not supported, trying default: {e}")
-                experiments = self.client.search_experiments(max_results=1000)
-                print(f"[MLflowManager] Successfully retrieved {len(experiments)} experiments (default view)")
+                logger.debug("view_type=ALL not supported, trying default")
+                experiments = self.client.search_experiments(max_results=MLFLOW_MAX_RESULTS)
+                logger.info(f"Successfully retrieved {len(experiments)} experiments (default view)")
             except Exception as e:
                 # Other errors - log and try default
-                print(f"[MLflowManager] Error with view_type=ALL: {e}, trying default")
-                experiments = self.client.search_experiments(max_results=1000)
-                print(f"[MLflowManager] Successfully retrieved {len(experiments)} experiments (default view)")
+                logger.warning(f"Error with view_type=ALL: {e}, trying default")
+                experiments = self.client.search_experiments(max_results=MLFLOW_MAX_RESULTS)
+                logger.info(f"Successfully retrieved {len(experiments)} experiments (default view)")
             
-            # Debug: Try to get experiment by name to see if it exists
+            # Try to get experiment by name if only Default found
             if len(experiments) == 1 and experiments[0].name == "Default":
-                print(f"[MLflowManager] WARNING: Only Default experiment found. Trying to get experiment by name...")
+                logger.debug("Only Default experiment found. Trying to get experiment by name...")
                 try:
                     test_exp = self.client.get_experiment_by_name("rakuten-multimodal-text-image")
-                    print(f"[MLflowManager] Found experiment by name: {test_exp.name} (ID: {test_exp.experiment_id})")
+                    logger.debug(f"Found experiment by name: {test_exp.name} (ID: {test_exp.experiment_id})")
                     # Add it to the list if not already there
                     if test_exp.experiment_id not in [e.experiment_id for e in experiments]:
                         experiments.append(test_exp)
-                        print(f"[MLflowManager] Added experiment to list. Total: {len(experiments)}")
+                        logger.debug(f"Added experiment to list. Total: {len(experiments)}")
                 except Exception as e:
-                    print(f"[MLflowManager] Could not get experiment by name: {e}")
+                    logger.debug(f"Could not get experiment by name: {e}")
             
-            # Debug: Log experiment names and details
+            # Log experiment names at debug level
             if experiments:
                 exp_names = [exp.name for exp in experiments]
-                print(f"[MLflowManager] Experiment names: {exp_names}")
-                for exp in experiments:
-                    print(f"[MLflowManager]   - {exp.name} (ID: {exp.experiment_id}, Stage: {exp.lifecycle_stage})")
+                logger.debug(f"Experiment names: {exp_names}")
             else:
-                print(f"[MLflowManager] Warning: No experiments returned from search_experiments()")
-                print(f"[MLflowManager] This might indicate:")
-                print(f"[MLflowManager]   1. Host header not being set correctly")
-                print(f"[MLflowManager]   2. Connecting to wrong MLflow instance")
-                print(f"[MLflowManager]   3. ALB routing not working correctly")
+                logger.warning("No experiments returned from search_experiments()")
+                logger.warning("This might indicate: 1) Host header not set correctly, 2) Wrong MLflow instance, 3) ALB routing issue")
             
             return [
                 {
@@ -270,30 +244,24 @@ class MLflowManager:
             ], None
         except Exception as e:
             error_msg = f"Error getting experiments from {self.tracking_uri}: {e}"
-            print(f"[MLflowManager] {error_msg}")
-            import traceback
-            traceback.print_exc()
+            logger.error(error_msg, exc_info=True)
             return [], error_msg
     
     def get_model_registry_aliases_for_run(self, run_id: str) -> List[str]:
-        """Get model registry aliases for a specific run_id"""
+        """Get model registry aliases for a specific run_id (optimized)"""
         try:
-            # Search all registered models
-            models = self.client.search_registered_models()
+            # Optimized: Use search API with filter instead of nested loops
+            # This reduces API calls from O(n*m) to O(1)
+            versions = self.client.search_model_versions(f"run_id='{run_id}'")
             aliases = []
+            for version in versions:
+                if hasattr(version, 'aliases') and version.aliases:
+                    aliases.extend(version.aliases)
             
-            for model in models:
-                # Search all versions of this model
-                versions = self.client.search_model_versions(f"name='{model.name}'")
-                for version in versions:
-                    if version.run_id == run_id:
-                        # Get aliases for this version
-                        if hasattr(version, 'aliases') and version.aliases:
-                            aliases.extend(version.aliases)
-            
+            logger.debug(f"Found {len(aliases)} aliases for run {run_id}")
             return aliases if aliases else []
         except Exception as e:
-            print(f"Error getting model registry aliases for run {run_id}: {e}")
+            logger.warning(f"Error getting model registry aliases for run {run_id}: {e}")
             return []
     
     def get_runs(self, experiment_id: str, max_results: int = 10) -> pd.DataFrame:
@@ -328,7 +296,7 @@ class MLflowManager:
             
             return pd.DataFrame(data)
         except Exception as e:
-            print(f"Error getting runs: {e}")
+            logger.error(f"Error getting runs: {e}", exc_info=True)
             return pd.DataFrame()
     
     def get_best_run(self, experiment_name: str, metric: str = 'f1_weighted') -> Optional[Dict]:
@@ -356,7 +324,7 @@ class MLflowManager:
                 'params': run.data.params
             }
         except Exception as e:
-            print(f"Error getting best run: {e}")
+            logger.error(f"Error getting best run: {e}", exc_info=True)
             return None
     
     def get_registered_models(self) -> List[Dict]:
@@ -406,7 +374,7 @@ class MLflowManager:
             
             return result
         except Exception as e:
-            print(f"Error getting registered models: {e}")
+            logger.error(f"Error getting registered models: {e}", exc_info=True)
             return []
     
     def get_model_version_details(self, model_name: str, version: Optional[str] = None, alias: Optional[str] = None) -> Optional[Dict]:
@@ -434,7 +402,7 @@ class MLflowManager:
                 'tags': run.data.tags
             }
         except Exception as e:
-            print(f"Error getting model version details: {e}")
+            logger.error(f"Error getting model version details: {e}", exc_info=True)
             return None
     
     def compare_runs(self, run_ids: List[str]) -> pd.DataFrame:
@@ -476,7 +444,7 @@ class MLflowManager:
             
             return pd.DataFrame(runs_data)
         except Exception as e:
-            print(f"Error comparing runs: {e}")
+            logger.error(f"Error comparing runs: {e}", exc_info=True)
             return pd.DataFrame()
     
     def log_run_metrics(self, experiment_name: str, params: Dict, metrics: Dict, tags: Dict = None) -> str:
@@ -490,6 +458,6 @@ class MLflowManager:
                     mlflow.set_tags(tags)
                 return run.info.run_id
         except Exception as e:
-            print(f"Error logging run: {e}")
+            logger.error(f"Error logging run: {e}", exc_info=True)
             return None
 

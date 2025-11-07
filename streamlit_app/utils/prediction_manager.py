@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 import json
 import os
+import logging
 from datetime import datetime
 from PIL import Image
 import io
@@ -18,12 +19,21 @@ try:
 except ImportError:
     S3_AVAILABLE = False
 
+# Import configuration
+from streamlit_app.utils.config import (
+    API_REQUEST_TIMEOUT,
+    API_HEALTH_CHECK_TIMEOUT
+)
+
 # Import API_HOST from constants to ensure it reads from Streamlit secrets
 try:
     from streamlit_app.utils.constants import API_HOST
 except ImportError:
     # Fallback if constants module is not available
     API_HOST = os.getenv("API_HOST", "api.rakuten.dev")
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 
 class PredictionManager:
@@ -71,7 +81,7 @@ class PredictionManager:
                     region_name=aws_region
                 )
             except Exception as e:
-                print(f"S3 initialization failed: {e}. Falling back to local files.")
+                logger.warning(f"S3 initialization failed: {e}. Falling back to local files.")
                 self.use_s3 = False
                 self.s3_client = None
     
@@ -120,9 +130,9 @@ class PredictionManager:
             
             # Only patch if not already patched (or re-patch to include API support)
             requests.Session.request = request_with_host_header
-            print(f"[PredictionManager] Configured host-based routing: {api_url} -> Host: {api_host}")
+            logger.info(f"Configured host-based routing: {api_url} -> Host: {api_host}")
         except Exception as e:
-            print(f"[PredictionManager] Warning: Failed to configure Host header: {e}")
+            logger.warning(f"Failed to configure Host header: {e}", exc_info=True)
     
     def _get_headers(self) -> Dict[str, str]:
         """Get headers for API requests with host-based routing"""
@@ -138,10 +148,14 @@ class PredictionManager:
             self._configure_api_host_header()
             
             headers = self._get_headers()
-            response = requests.get(f"{self.api_url}/health", timeout=5, headers=headers)
+            response = requests.get(
+                f"{self.api_url}/health", 
+                timeout=API_HEALTH_CHECK_TIMEOUT, 
+                headers=headers
+            )
             return response.status_code == 200
         except Exception as e:
-            print(f"[PredictionManager] API health check failed: {e}")
+            logger.warning(f"API health check failed: {e}")
             return False
     
     def predict(self, designation: str, description: str, 
@@ -171,7 +185,7 @@ class PredictionManager:
             response = requests.post(
                 f"{self.api_url}/predict",
                 json=payload,
-                timeout=30,
+                timeout=API_REQUEST_TIMEOUT,
                 headers=headers
             )
             
@@ -229,7 +243,7 @@ class PredictionManager:
             self.s3_client.put_object(Bucket=self.s3_bucket, Key=full_key, Body=content)
             return True
         except Exception as e:
-            print(f"S3 error saving {s3_key}: {e}")
+            logger.warning(f"S3 error saving {s3_key}: {e}")
             return False
     
     def _load_from_s3(self, s3_key: str) -> Optional[pd.DataFrame]:
@@ -246,10 +260,10 @@ class PredictionManager:
             error_code = e.response.get('Error', {}).get('Code', '')
             if error_code == 'NoSuchKey':
                 return None  # File doesn't exist yet
-            print(f"S3 error loading {s3_key}: {e}")
+            logger.warning(f"S3 error loading {s3_key}: {e}")
             return None
         except Exception as e:
-            print(f"Error loading from S3: {e}")
+            logger.warning(f"Error loading from S3: {e}")
             return None
     
     def _append_to_s3_csv(self, s3_key: str, new_row: Dict) -> bool:
@@ -271,7 +285,7 @@ class PredictionManager:
             csv_content = df.to_csv(index=False).encode('utf-8')
             return self._save_to_s3(s3_key, csv_content)
         except Exception as e:
-            print(f"Error appending to S3 CSV: {e}")
+            logger.warning(f"Error appending to S3 CSV: {e}")
             return False
     
     def log_prediction(self, designation: str, description: str, 
@@ -301,7 +315,7 @@ class PredictionManager:
                 df.to_csv(self.inference_log_path, mode='w', header=True, index=False)
                 
         except Exception as e:
-            print(f"Error logging prediction: {e}")
+            logger.error(f"Error logging prediction: {e}", exc_info=True)
     
     def get_prediction_history(self, limit: int = 50) -> pd.DataFrame:
         """Get recent prediction history (from S3 or local)"""
@@ -327,11 +341,11 @@ class PredictionManager:
             required_cols = ['timestamp', 'designation', 'predicted_class']
             for col in required_cols:
                 if col not in df.columns:
-                    print(f"Warning: Missing column '{col}' in inference log")
+                    logger.warning(f"Missing column '{col}' in inference log")
             
             return df.tail(limit)
         except Exception as e:
-            print(f"Error loading prediction history: {e}")
+            logger.error(f"Error loading prediction history: {e}", exc_info=True)
             return pd.DataFrame()
     
     def get_prediction_statistics(self) -> Dict:
@@ -384,7 +398,7 @@ class PredictionManager:
             
             return stats
         except Exception as e:
-            print(f"Error getting prediction statistics: {e}")
+            logger.error(f"Error getting prediction statistics: {e}", exc_info=True)
             return {
                 'total_predictions': 0,
                 'unique_classes': 0,
@@ -428,13 +442,13 @@ class PredictionManager:
                     self.s3_client.delete_object(Bucket=self.s3_bucket, Key=full_key)
                     return True
                 except Exception as e:
-                    print(f"Error clearing S3 prediction history: {e}")
+                    logger.warning(f"Error clearing S3 prediction history: {e}")
             
             # Fallback to local file
             if self.inference_log_path.exists():
                 self.inference_log_path.unlink()
             return True
         except Exception as e:
-            print(f"Error clearing prediction history: {e}")
+            logger.error(f"Error clearing prediction history: {e}", exc_info=True)
             return False
 

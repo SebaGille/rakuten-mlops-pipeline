@@ -22,14 +22,18 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize managers with timeout protection
-@st.cache_resource
-def get_managers():
+# Initialize managers - separate sync function to avoid ScriptRunContext warnings
+def _init_managers_sync():
+    """Initialize managers synchronously (no Streamlit calls)"""
     training_mgr = TrainingManager(PROJECT_ROOT)
-    # Use MLFLOW_TRACKING_URI (path-prefixed for ALB routing) for client
-    # MLflowManager now uses lazy initialization to avoid hanging
     mlflow_mgr = MLflowManager(MLFLOW_TRACKING_URI)
     return training_mgr, mlflow_mgr
+
+# Cache the managers
+@st.cache_resource
+def get_managers():
+    """Get cached managers (called from main thread)"""
+    return _init_managers_sync()
 
 # Header - show immediately to avoid blank page
 st.title("Model Training & Experiment Tracking")
@@ -38,6 +42,7 @@ st.markdown("---")
 
 # Try to get managers with timeout protection
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from streamlit_app.utils.config import MANAGER_INIT_TIMEOUT
 
 # Show connection status
 connection_status = st.empty()
@@ -45,9 +50,16 @@ connection_status = st.empty()
 with connection_status.container():
     with st.spinner("Initializing managers..."):
         try:
+            # Run initialization in thread to avoid blocking, but don't use Streamlit in thread
             with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(get_managers)
-                training_manager, mlflow_manager = future.result(timeout=5)  # 5 second timeout
+                future = executor.submit(_init_managers_sync)
+                training_manager, mlflow_manager = future.result(timeout=MANAGER_INIT_TIMEOUT)
+            # Cache the result for future use
+            # Note: We can't directly cache from thread, so we'll call get_managers() which will use cache
+            # But first time, we need to populate cache
+            if not hasattr(get_managers, '_cached'):
+                # Manually set the cache (this is a workaround)
+                training_manager, mlflow_manager = get_managers()
         except FutureTimeoutError:
             connection_status.error("⚠️ Manager initialization timed out. Please check your connection and try again.")
             connection_status.info(f"Attempted to connect to: `{MLFLOW_TRACKING_URI}`")
@@ -230,8 +242,13 @@ If the new model performs better (based on F1-weighted score), it will be promot
 Otherwise, it becomes a **Challenger** for future comparison.
 """)
 
-# Get experiments
-experiments, error_msg = mlflow_manager.get_experiments()
+# Get experiments (with caching)
+@st.cache_data(ttl=60)  # Cache for 60 seconds
+def get_experiments_cached(mlflow_manager):
+    """Get experiments with caching"""
+    return mlflow_manager.get_experiments()
+
+experiments, error_msg = get_experiments_cached(mlflow_manager)
 
 # Show error if experiments retrieval failed
 if error_msg:
@@ -285,9 +302,9 @@ if experiments:
             # Champion run section
             st.markdown("#### 🏆 Champion Model (Production)")
             
-            # Get champion run_id from model registry
+            # Get champion run_id from model registry (use cached function defined below)
             champion_run_id = None
-            models = mlflow_manager.get_registered_models()
+            models = get_registered_models_cached(mlflow_manager)
             
             # Method 1: Try to get champion from model registry
             if models and len(models) > 0:
@@ -413,8 +430,8 @@ View all registered models with their versions, metadata, and performance metric
 Models promoted to **Champion** are currently deployed in production.
 """)
 
-# Get registered models
-models = mlflow_manager.get_registered_models()
+# Get registered models (using cached function defined above)
+models = get_registered_models_cached(mlflow_manager)
 
 if models:
     for model in models:
