@@ -49,12 +49,12 @@ class MLflowManager:
             import requests
             from functools import wraps
             
+            tracking_uri = self.tracking_uri.rstrip("/")
+            mlflow_host = self.mlflow_host
+            
             # Store original request method if not already stored
             if not hasattr(requests.Session, '_original_request'):
                 requests.Session._original_request = requests.Session.request
-            
-            tracking_uri = self.tracking_uri
-            mlflow_host = self.mlflow_host
             
             # Get the original request method
             original_request = requests.Session._original_request
@@ -62,13 +62,14 @@ class MLflowManager:
             @wraps(original_request)
             def request_with_host_header(session_self, method, url, *args, **kwargs):
                 # If the URL matches our tracking URI, add Host header
-                if tracking_uri and url.startswith(tracking_uri):
+                # Normalize URLs for comparison (remove trailing slashes)
+                url_normalized = url.rstrip("/")
+                if tracking_uri and (url_normalized.startswith(tracking_uri) or url.startswith(tracking_uri)):
                     if 'headers' not in kwargs:
                         kwargs['headers'] = {}
-                    # Only add Host header if not already set
-                    if 'Host' not in kwargs['headers']:
-                        kwargs['headers']['Host'] = mlflow_host
-                        print(f"[MLflowManager] Added Host header: {mlflow_host} for URL: {url}")
+                    # Always set Host header (don't check if already set, as it might be wrong)
+                    kwargs['headers']['Host'] = mlflow_host
+                    print(f"[MLflowManager] Added Host header: {mlflow_host} for URL: {url} (tracking_uri: {tracking_uri})")
                 return original_request(session_self, method, url, *args, **kwargs)
             
             # Patch the Session class
@@ -203,16 +204,26 @@ class MLflowManager:
             print(f"[MLflowManager] Getting experiments from: {self.tracking_uri}")
             print(f"[MLflowManager] Using Host header: {self.mlflow_host}")
             
+            # Ensure host header is configured before making the call
+            self._configure_mlflow_host_header()
+            
             # Use max_results to ensure we get all experiments (default might be limited)
+            print(f"[MLflowManager] Calling search_experiments(max_results=1000)...")
             experiments = self.client.search_experiments(max_results=1000)
             print(f"[MLflowManager] Successfully retrieved {len(experiments)} experiments")
             
-            # Debug: Log experiment names
+            # Debug: Log experiment names and details
             if experiments:
                 exp_names = [exp.name for exp in experiments]
                 print(f"[MLflowManager] Experiment names: {exp_names}")
+                for exp in experiments:
+                    print(f"[MLflowManager]   - {exp.name} (ID: {exp.experiment_id}, Stage: {exp.lifecycle_stage})")
             else:
                 print(f"[MLflowManager] Warning: No experiments returned from search_experiments()")
+                print(f"[MLflowManager] This might indicate:")
+                print(f"[MLflowManager]   1. Host header not being set correctly")
+                print(f"[MLflowManager]   2. Connecting to wrong MLflow instance")
+                print(f"[MLflowManager]   3. ALB routing not working correctly")
             
             return [
                 {
