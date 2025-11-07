@@ -242,13 +242,23 @@ If the new model performs better (based on F1-weighted score), it will be promot
 Otherwise, it becomes a **Challenger** for future comparison.
 """)
 
-# Get experiments (with caching)
+# Cached functions for API calls - use hashable parameters (tracking_uri) instead of manager object
 @st.cache_data(ttl=60)  # Cache for 60 seconds
-def get_experiments_cached(mlflow_manager):
-    """Get experiments with caching"""
-    return mlflow_manager.get_experiments()
+def get_experiments_cached(tracking_uri: str):
+    """Get experiments with caching - uses tracking_uri as hashable key"""
+    # Create a temporary manager for this call
+    temp_manager = MLflowManager(tracking_uri)
+    return temp_manager.get_experiments()
 
-experiments, error_msg = get_experiments_cached(mlflow_manager)
+@st.cache_data(ttl=120)  # Cache for 2 minutes
+def get_registered_models_cached(tracking_uri: str):
+    """Get registered models with caching - uses tracking_uri as hashable key"""
+    # Create a temporary manager for this call
+    temp_manager = MLflowManager(tracking_uri)
+    return temp_manager.get_registered_models()
+
+# Get experiments
+experiments, error_msg = get_experiments_cached(MLFLOW_TRACKING_URI)
 
 # Show error if experiments retrieval failed
 if error_msg:
@@ -302,9 +312,9 @@ if experiments:
             # Champion run section
             st.markdown("#### 🏆 Champion Model (Production)")
             
-            # Get champion run_id from model registry (use cached function defined below)
+            # Get champion run_id from model registry (use cached function)
             champion_run_id = None
-            models = get_registered_models_cached(mlflow_manager)
+            models = get_registered_models_cached(MLFLOW_TRACKING_URI)
             
             # Method 1: Try to get champion from model registry
             if models and len(models) > 0:
@@ -430,8 +440,8 @@ View all registered models with their versions, metadata, and performance metric
 Models promoted to **Champion** are currently deployed in production.
 """)
 
-# Get registered models (using cached function defined above)
-models = get_registered_models_cached(mlflow_manager)
+# Get registered models (using cached function)
+models = get_registered_models_cached(MLFLOW_TRACKING_URI)
 
 if models:
     for model in models:

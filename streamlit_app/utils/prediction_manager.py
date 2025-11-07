@@ -141,22 +141,64 @@ class PredictionManager:
             headers['Host'] = self.api_host
         return headers
     
-    def check_api_health(self) -> bool:
-        """Check if the API is accessible with host-based routing support"""
-        try:
-            # Ensure host header is configured
-            self._configure_api_host_header()
-            
-            headers = self._get_headers()
-            response = requests.get(
-                f"{self.api_url}/health", 
-                timeout=API_HEALTH_CHECK_TIMEOUT, 
-                headers=headers
-            )
-            return response.status_code == 200
-        except Exception as e:
-            logger.warning(f"API health check failed: {e}")
-            return False
+    def check_api_health(self) -> Tuple[bool, Optional[str]]:
+        """Check if the API is accessible with host-based routing support
+        
+        Returns:
+            tuple: (is_healthy, error_message)
+        """
+        # Ensure host header is configured
+        self._configure_api_host_header()
+        
+        headers = self._get_headers()
+        
+        # Try multiple health check endpoints
+        health_urls = [
+            f"{self.api_url}/health",
+            f"{self.api_url.rstrip('/')}/health",
+            f"{self.api_url}/",
+        ]
+        
+        for url in health_urls:
+            try:
+                logger.debug(f"Trying health check: {url} with headers: {headers}")
+                response = requests.get(
+                    url, 
+                    timeout=API_HEALTH_CHECK_TIMEOUT, 
+                    headers=headers,
+                    allow_redirects=True
+                )
+                if response.status_code == 200:
+                    logger.info(f"API health check successful: {url}")
+                    return True, None
+                else:
+                    logger.debug(f"API returned status {response.status_code} for {url}")
+            except requests.exceptions.Timeout:
+                logger.warning(f"API health check timed out for {url}")
+                continue
+            except requests.exceptions.ConnectionError as e:
+                logger.warning(f"API connection error for {url}: {e}")
+                error_msg = f"Connection failed: Could not reach API at {self.api_url}. The API may not be deployed or running."
+                continue
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"API request error for {url}: {e}")
+                error_msg = f"Request failed: {str(e)}"
+                continue
+            except Exception as e:
+                logger.warning(f"Unexpected error during API health check for {url}: {e}")
+                error_msg = f"Unexpected error: {str(e)}"
+                continue
+        
+        # All health checks failed
+        error_msg = (
+            f"API is not accessible at {self.api_url}. "
+            f"Please ensure:\n"
+            f"1. The API is deployed and running\n"
+            f"2. The ALB is configured correctly\n"
+            f"3. The API_HOST ({self.api_host}) is set correctly for host-based routing\n"
+            f"4. Network connectivity is available"
+        )
+        return False, error_msg
     
     def predict(self, designation: str, description: str, 
                 image: Optional[bytes] = None) -> Optional[Dict]:

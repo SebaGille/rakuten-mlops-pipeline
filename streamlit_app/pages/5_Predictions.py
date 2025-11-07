@@ -33,10 +33,20 @@ st.markdown("Make real-time product category predictions using the deployed mode
 st.markdown("---")
 
 # Check API health
-api_healthy = prediction_manager.check_api_health()
+api_healthy, error_msg = prediction_manager.check_api_health()
 if not api_healthy:
-    st.error("⚠️ Prediction API is not accessible. Please start the infrastructure first (🐳 Infrastructure page).")
-    st.info(f"Expected API at: {API_URL}")
+    st.error("⚠️ Prediction API is not accessible")
+    st.info(f"**Expected API at:** `{API_URL}`")
+    if error_msg:
+        with st.expander("🔍 Error Details", expanded=True):
+            st.text(error_msg)
+    st.info("""
+    **Troubleshooting Steps:**
+    1. Check the **🐳 Infrastructure** page to see if the API service is running
+    2. For AWS deployments, verify the ECS service is healthy
+    3. Check that the API_HOST environment variable is set correctly
+    4. Verify network connectivity to the ALB
+    """)
     st.stop()
 else:
     st.success(f"✅ Connected to Prediction API: {API_URL}")
