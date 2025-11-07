@@ -9,6 +9,13 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 import os
 import logging
 
+# Import MLFLOW_HOST from constants to ensure it reads from Streamlit secrets
+try:
+    from streamlit_app.utils.constants import MLFLOW_HOST
+except ImportError:
+    # Fallback if constants module is not available
+    MLFLOW_HOST = os.getenv("MLFLOW_HOST", "mlflow.rakuten.dev")
+
 
 class MLflowManager:
     """Manage MLflow experiments, runs, and model registry"""
@@ -16,7 +23,8 @@ class MLflowManager:
     def __init__(self, tracking_uri: str):
         self.tracking_uri = tracking_uri.rstrip("/")
         # Get MLflow host for host-based routing (if using ALB)
-        self.mlflow_host = os.getenv("MLFLOW_HOST", "mlflow.rakuten.dev")
+        # Use MLFLOW_HOST from constants.py which reads from Streamlit secrets
+        self.mlflow_host = MLFLOW_HOST
         
         # Configure MLflow to use custom Host header for host-based routing
         # MLflow uses requests internally, so we need to set the Host header
