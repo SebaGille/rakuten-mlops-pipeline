@@ -127,7 +127,27 @@ def compare_and_promote_model(client, model_name, current_run_id, current_metric
             # No champion model exists, promote directly
             return "champion", "no_existing_champion_model"
         
-        prod_run = client.get_run(prod_version.run_id)
+        # Validate that the champion model version has a valid run_id
+        if not prod_version.run_id or (isinstance(prod_version.run_id, str) and prod_version.run_id.strip() == ""):
+            print(f"Warning: Champion model version {prod_version.version} has no run_id (run_id={prod_version.run_id}).")
+            print(f"Promoting current model to champion.")
+            return "champion", "champion_model_has_no_run_id"
+        
+        print(f"Found champion model version {prod_version.version} with run_id: {prod_version.run_id}")
+        
+        # Get the run for the champion model
+        try:
+            prod_run = client.get_run(prod_version.run_id)
+        except Exception as run_error:
+            print(f"Warning: Could not retrieve run {prod_version.run_id} for champion model: {run_error}")
+            print(f"Promoting current model to champion.")
+            return "champion", f"champion_run_not_found: {str(run_error)}"
+        
+        # Validate that the run has metrics
+        if not hasattr(prod_run, 'data') or not hasattr(prod_run.data, 'metrics'):
+            print(f"Warning: Champion run {prod_version.run_id} has no metrics. Promoting current model to champion.")
+            return "champion", "champion_run_has_no_metrics"
+        
         prod_metrics = prod_run.data.metrics
         
         # Extract metrics for comparison
@@ -585,20 +605,32 @@ def main():
                 print(f"Model '{model_name}' already registered (this is normal): {e}")
             
             # Create a new model version using the logged artifact
-            model_uri = f"runs:/{mlflow.active_run().info.run_id}/{MODEL_FILE.name}"
+            current_run_id = mlflow.active_run().info.run_id
+            if not current_run_id or (isinstance(current_run_id, str) and current_run_id.strip() == ""):
+                raise ValueError(f"Invalid run_id when creating model version: {current_run_id}")
+            
+            model_uri = f"runs:/{current_run_id}/{MODEL_FILE.name}"
+            print(f"Creating model version with run_id: {current_run_id}")
             model_version = client.create_model_version(
                 name=model_name,
                 source=model_uri,
-                run_id=mlflow.active_run().info.run_id
+                run_id=current_run_id
             )
             print(f"Created model version {model_version.version}")
+            
+            # Verify that the model version has the run_id set correctly
+            if not model_version.run_id or (isinstance(model_version.run_id, str) and model_version.run_id.strip() == ""):
+                print(f"Warning: Created model version {model_version.version} but run_id is empty: {model_version.run_id}")
+                print(f"Expected run_id: {current_run_id}")
+            else:
+                print(f"Model version {model_version.version} has run_id: {model_version.run_id}")
             
             # --- Compare and decide promotion ---
             current_metrics = {"f1_weighted": f1, "accuracy": acc}
             target_alias, promotion_reason = compare_and_promote_model(
                 client=client,
                 model_name=model_name,
-                current_run_id=mlflow.active_run().info.run_id,
+                current_run_id=current_run_id,
                 current_metrics=current_metrics
             )
             
