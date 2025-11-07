@@ -573,7 +573,9 @@ def main():
         print("\nRegistering model in MLflow Model Registry...")
         model_name = "rakuten-multimodal"
         try:
-            client = mlflow.tracking.MlflowClient()
+            # Use the same client that was configured earlier with proper tracking URI
+            # This ensures host-based routing is configured correctly
+            client = mlflow.tracking.MlflowClient(tracking_uri=MLFLOW_URI)
             
             # Try to create registered model (will fail if already exists)
             try:
@@ -606,17 +608,41 @@ def main():
                 "auto_promotion_reason": promotion_reason
             })
             
-            # Set the model alias
-            client.set_registered_model_alias(
-                name=model_name,
-                alias=target_alias,
-                version=model_version.version
-            )
-            print(f"✓ Set alias '{target_alias}' to model version {model_version.version}")
-            print(f"  Reason: {promotion_reason}")
+            # Set the model alias - this is critical for automatic promotion
+            try:
+                client.set_registered_model_alias(
+                    name=model_name,
+                    alias=target_alias,
+                    version=model_version.version
+                )
+                print(f"✓ Set alias '{target_alias}' to model version {model_version.version}")
+                print(f"  Reason: {promotion_reason}")
+                
+                # If promoted to champion, log success
+                if target_alias == "champion":
+                    print(f"🏆 Model automatically promoted to CHAMPION!")
+                    if promotion_reason == "no_existing_champion_model":
+                        print(f"   This is the first model run - automatically set as champion.")
+                    else:
+                        print(f"   New model outperformed previous champion based on metrics.")
+            except Exception as alias_error:
+                # This is a critical error - raise it so training fails if promotion fails
+                error_msg = f"CRITICAL: Failed to set model alias '{target_alias}' for version {model_version.version}: {alias_error}"
+                print(f"❌ {error_msg}")
+                print(f"   Model was registered but NOT promoted. Manual intervention required.")
+                # Re-raise the exception so it's visible in training output
+                raise RuntimeError(error_msg) from alias_error
             
+        except RuntimeError:
+            # Re-raise RuntimeError (promotion failures) to fail training
+            raise
         except Exception as e:
-            print(f"Model registration/promotion error: {e}")
+            # For other errors, log but don't fail training (model was still trained)
+            print(f"⚠️  Model registration/promotion error: {e}")
+            print(f"   Model was trained successfully but registration/promotion failed.")
+            print(f"   You may need to manually register and promote the model.")
+            import traceback
+            traceback.print_exc()
 
         # Print run_id for extraction by TrainingManager
         run_id = mlflow.active_run().info.run_id

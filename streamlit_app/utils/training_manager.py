@@ -258,22 +258,27 @@ class TrainingManager:
                 'USE_IMAGES': str(config.get('use_images', True)),
             }
             
-            # Add MLflow tracking URI if available
+            # Add MLflow tracking URI and host if available
             try:
                 import streamlit as st
                 try:
-                    from streamlit_app.utils.constants import MLFLOW_TRACKING_URI
+                    from streamlit_app.utils.constants import MLFLOW_TRACKING_URI, MLFLOW_HOST
                     env_vars['MLFLOW_TRACKING_URI'] = MLFLOW_TRACKING_URI
+                    env_vars['MLFLOW_HOST'] = MLFLOW_HOST
                 except (ImportError, AttributeError):
                     # Fallback to environment variable
                     mlflow_uri = os.getenv("MLFLOW_TRACKING_URI")
+                    mlflow_host = os.getenv("MLFLOW_HOST", "mlflow.rakuten.dev")
                     if mlflow_uri:
                         env_vars['MLFLOW_TRACKING_URI'] = mlflow_uri
+                    env_vars['MLFLOW_HOST'] = mlflow_host
             except ImportError:
                 # Not in Streamlit context, use environment variable
                 mlflow_uri = os.getenv("MLFLOW_TRACKING_URI")
+                mlflow_host = os.getenv("MLFLOW_HOST", "mlflow.rakuten.dev")
                 if mlflow_uri:
                     env_vars['MLFLOW_TRACKING_URI'] = mlflow_uri
+                env_vars['MLFLOW_HOST'] = mlflow_host
             
             # Add S3 configuration if available
             try:

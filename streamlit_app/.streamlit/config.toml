@@ -10,6 +10,12 @@ headless = true
 port = 8501
 enableCORS = false
 enableXsrfProtection = true
+# Optimize startup - allow file watcher to be less aggressive
+runOnSave = false
+# Increase max upload size if needed
+maxUploadSize = 200
+# Server address
+address = "localhost"
 
 [browser]
 gatherUsageStats = false

@@ -69,7 +69,15 @@ class MLflowManager:
                         kwargs['headers'] = {}
                     # Always set Host header (don't check if already set, as it might be wrong)
                     kwargs['headers']['Host'] = mlflow_host
+                    # Log full request details for debugging
+                    headers_str = ', '.join([f"{k}: {v}" for k, v in kwargs.get('headers', {}).items()])
+                    print(f"[MLflowManager] Request: {method} {url}")
+                    print(f"[MLflowManager] Headers: {headers_str}")
                     print(f"[MLflowManager] Added Host header: {mlflow_host} for URL: {url} (tracking_uri: {tracking_uri})")
+                else:
+                    # Log when URL doesn't match (for debugging)
+                    if '/api/2.0/mlflow/' in url:
+                        print(f"[MLflowManager] WARNING: URL doesn't match tracking_uri: {url} (tracking_uri: {tracking_uri})")
                 return original_request(session_self, method, url, *args, **kwargs)
             
             # Patch the Session class
@@ -214,11 +222,29 @@ class MLflowManager:
                 # Try to get all experiments (active and deleted)
                 experiments = self.client.search_experiments(max_results=1000, view_type="ALL")
                 print(f"[MLflowManager] Successfully retrieved {len(experiments)} experiments (view_type=ALL)")
-            except Exception as e:
-                # Fallback to default (active only) if view_type=ALL is not supported
+            except TypeError as e:
+                # Fallback to default (active only) if view_type=ALL is not supported (older MLflow versions)
                 print(f"[MLflowManager] view_type=ALL not supported, trying default: {e}")
                 experiments = self.client.search_experiments(max_results=1000)
                 print(f"[MLflowManager] Successfully retrieved {len(experiments)} experiments (default view)")
+            except Exception as e:
+                # Other errors - log and try default
+                print(f"[MLflowManager] Error with view_type=ALL: {e}, trying default")
+                experiments = self.client.search_experiments(max_results=1000)
+                print(f"[MLflowManager] Successfully retrieved {len(experiments)} experiments (default view)")
+            
+            # Debug: Try to get experiment by name to see if it exists
+            if len(experiments) == 1 and experiments[0].name == "Default":
+                print(f"[MLflowManager] WARNING: Only Default experiment found. Trying to get experiment by name...")
+                try:
+                    test_exp = self.client.get_experiment_by_name("rakuten-multimodal-text-image")
+                    print(f"[MLflowManager] Found experiment by name: {test_exp.name} (ID: {test_exp.experiment_id})")
+                    # Add it to the list if not already there
+                    if test_exp.experiment_id not in [e.experiment_id for e in experiments]:
+                        experiments.append(test_exp)
+                        print(f"[MLflowManager] Added experiment to list. Total: {len(experiments)}")
+                except Exception as e:
+                    print(f"[MLflowManager] Could not get experiment by name: {e}")
             
             # Debug: Log experiment names and details
             if experiments:
