@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 from PIL import Image
 import io
+from urllib.parse import urljoin
 
 # Optional S3 support
 try:
@@ -152,15 +153,18 @@ class PredictionManager:
             self._configure_api_host_header()
             
             headers = self._get_headers()
+            base_url = self.api_url.rstrip("/")
             
-            # Try multiple health check endpoints
+            # Try multiple health check endpoints (similar to MLflowManager approach)
             health_urls = [
-                f"{self.api_url}/health",
-                f"{self.api_url.rstrip('/')}/health",
-                f"{self.api_url}/",
+                urljoin(base_url + "/", "health"),
+                base_url + "/health",
+                base_url,
+                base_url + "/",
             ]
             
             last_error_msg = None
+            http_success = False
             
             for url in health_urls:
                 try:
@@ -171,9 +175,11 @@ class PredictionManager:
                         headers=headers,
                         allow_redirects=True
                     )
-                    if response.status_code == 200:
-                        logger.info(f"API health check successful: {url}")
-                        return (True, None)
+                    # Accept any status code < 400 (like MLflowManager does)
+                    if response.status_code < 400:
+                        logger.info(f"API health check successful: {url} (status {response.status_code})")
+                        http_success = True
+                        break
                     else:
                         logger.debug(f"API returned status {response.status_code} for {url}")
                         last_error_msg = f"API returned status {response.status_code}"
@@ -193,6 +199,9 @@ class PredictionManager:
                     logger.warning(f"Unexpected error during API health check for {url}: {e}")
                     last_error_msg = f"Unexpected error: {str(e)}"
                     continue
+            
+            if http_success:
+                return (True, None)
             
             # All health checks failed
             error_msg = (
