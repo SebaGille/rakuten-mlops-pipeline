@@ -180,7 +180,7 @@ st.markdown("---")
 
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    if st.button("START TRAINING", type="primary", use_container_width=True):
+    if st.button("START TRAINING", type="primary", width='stretch'):
         # Create configuration
         config = {
             'sample_size': sample_size if sample_size != "Full Dataset" else None,
@@ -277,7 +277,7 @@ if experiments:
             
             st.dataframe(
                 df_display[display_cols],
-                use_container_width=True
+                width='stretch'
             )
             
             st.markdown("---")
@@ -317,7 +317,7 @@ if experiments:
                     
                     st.dataframe(
                         df_champion_display[display_cols],
-                        use_container_width=True
+                        width='stretch'
                     )
                 else:
                     st.warning("Champion run not found in the current runs list. It may be older than the displayed runs.")
@@ -362,7 +362,7 @@ if experiments:
                     labels={'start_time': 'Run Time', 'accuracy': 'Accuracy'}
                 )
                 fig_acc.update_layout(height=300)
-                st.plotly_chart(fig_acc, use_container_width=True)
+                st.plotly_chart(fig_acc, width='stretch')
             
             with col2:
                 st.markdown("**F1-Weighted: Balanced Performance Score**")
@@ -394,7 +394,7 @@ if experiments:
                     color_discrete_sequence=['#e74c3c']
                 )
                 fig_f1.update_layout(height=300)
-                st.plotly_chart(fig_f1, use_container_width=True)
+                st.plotly_chart(fig_f1, width='stretch')
             
         else:
             st.warning("No runs found for this experiment. Train a model first!")
@@ -483,7 +483,7 @@ if models:
                             {'Parameter': k, 'Value': v} 
                             for k, v in params.items()
                         ])
-                        st.dataframe(params_df, use_container_width=True, hide_index=True)
+                        st.dataframe(params_df, width='stretch', hide_index=True)
                     else:
                         st.info("No parameters logged")
                     
@@ -498,7 +498,7 @@ if models:
                                 {'Tag': k, 'Value': v} 
                                 for k, v in display_tags.items()
                             ])
-                            st.dataframe(tags_df, use_container_width=True, hide_index=True)
+                            st.dataframe(tags_df, width='stretch', hide_index=True)
                         else:
                             st.info("No custom tags")
                     else:
@@ -548,7 +548,7 @@ if models:
                             {'Parameter': k, 'Value': v} 
                             for k, v in params.items()
                         ])
-                        st.dataframe(params_df, use_container_width=True, hide_index=True)
+                        st.dataframe(params_df, width='stretch', hide_index=True)
                     
                     # Comparison with champion
                     if champion_details and challenger_details:
@@ -571,7 +571,7 @@ if models:
                         df_comp['Difference'] = df_comp['Challenger'] - df_comp['Champion']
                         df_comp['% Change'] = ((df_comp['Challenger'] - df_comp['Champion']) / df_comp['Champion'] * 100).round(2)
                         
-                        st.dataframe(df_comp, use_container_width=True, hide_index=True)
+                        st.dataframe(df_comp, width='stretch', hide_index=True)
                         
                         # Recommendation
                         f1_diff = df_comp[df_comp['Metric'] == 'F1-Weighted']['Difference'].values[0]

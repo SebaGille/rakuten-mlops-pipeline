@@ -156,7 +156,7 @@ if df_log is not None and not df_log.empty:
             markers=True
         )
         fig_time.update_layout(height=400)
-        st.plotly_chart(fig_time, use_container_width=True)
+        st.plotly_chart(fig_time, width='stretch')
     else:
         st.info("Timestamp data not available")
     
@@ -181,7 +181,7 @@ if df_log is not None and not df_log.empty:
             color_continuous_scale='Blues'
         )
         fig_class.update_layout(xaxis_tickangle=-45, height=400)
-        st.plotly_chart(fig_class, use_container_width=True)
+        st.plotly_chart(fig_class, width='stretch')
     else:
         st.info("Prediction class data not available")
     
@@ -202,7 +202,7 @@ if df_log is not None and not df_log.empty:
                 color_discrete_sequence=['#3498db']
             )
             fig_des.update_layout(height=300)
-            st.plotly_chart(fig_des, use_container_width=True)
+            st.plotly_chart(fig_des, width='stretch')
         else:
             st.info("Designation length data not available")
     
@@ -216,7 +216,7 @@ if df_log is not None and not df_log.empty:
                 color_discrete_sequence=['#e74c3c']
             )
             fig_desc.update_layout(height=300)
-            st.plotly_chart(fig_desc, use_container_width=True)
+            st.plotly_chart(fig_desc, width='stretch')
         else:
             st.info("Description length data not available")
 else:
@@ -305,7 +305,7 @@ if drift_status:
             })
         
         df_drift = pd.DataFrame(drift_details)
-        st.dataframe(df_drift, use_container_width=True, height=300)
+        st.dataframe(df_drift, width='stretch', height=300)
     
     # Link to full HTML report
     evidently_html_path = PROJECT_ROOT / "reports" / "evidently" / "evidently_report.html"
@@ -442,7 +442,7 @@ if mlflow_manager.check_connection():
                     labels={'value': 'Score', 'variable': 'Metric', 'start_time': 'Training Date'}
                 )
                 fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
                 
                 # Performance statistics
                 st.markdown("#### 📊 Performance Statistics")

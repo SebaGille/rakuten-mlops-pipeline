@@ -190,7 +190,7 @@ st.markdown("### Control Panel")
 control_all_start, control_all_stop = st.columns(2)
 
 with control_all_start:
-    if st.button("Start all services", type="primary", use_container_width=True):
+    if st.button("Start all services", type="primary", width='stretch'):
         with st.spinner("Scaling services to 1 instance..."):
             ecs_manager.scale_all(1)
             time.sleep(1)
@@ -198,7 +198,7 @@ with control_all_start:
         st.rerun()
 
 with control_all_stop:
-    if st.button("Stop all services", use_container_width=True):
+    if st.button("Stop all services", width='stretch'):
         with st.spinner("Stopping all services..."):
             ecs_manager.scale_all(0)
             time.sleep(1)

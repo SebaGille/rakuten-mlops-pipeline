@@ -76,7 +76,7 @@ if stats:
             color_continuous_scale='Blues'
         )
         fig.update_layout(xaxis_tickangle=-45, height=500)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     st.markdown("---")
     
@@ -92,7 +92,7 @@ if stats:
     )
     
     # Load button
-    if st.button("Load 10 Samples", use_container_width=True):
+    if st.button("Load 10 Samples", width='stretch'):
         with st.spinner("Loading dataset sample..."):
             df_sample = training_manager.load_dataset_sample(
                 sample_size=10,

@@ -137,7 +137,7 @@ with col1:
     st.markdown("---")
     
     # Prediction button
-    predict_button = st.button("🔮 PREDICT CATEGORY", type="primary", use_container_width=True)
+    predict_button = st.button("🔮 PREDICT CATEGORY", type="primary", width='stretch')
 
 with col2:
     st.markdown("### 📊 Prediction Results")
@@ -270,7 +270,7 @@ if show_history:
         if display_cols:
             st.dataframe(
                 history_display[display_cols].tail(20),
-                use_container_width=True,
+                width='stretch',
                 height=300
             )
         else:
@@ -295,7 +295,7 @@ if show_history:
                 color_continuous_scale='Viridis'
             )
             fig.update_layout(xaxis_tickangle=-45, height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         
         # Clear history button
         if st.button("🗑️ Clear Prediction History", type="secondary"):
