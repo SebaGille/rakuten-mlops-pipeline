@@ -40,19 +40,6 @@ PRODUCT_CATEGORIES = {
     2905: "🧹 Cleaning Products"
 }
 
-# AWS / ECS defaults
-AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
-AWS_ECS_CLUSTER = os.getenv("AWS_ECS_CLUSTER", "rakuten-mlops-cluster")
-AWS_ALB_URL = os.getenv("AWS_ALB_URL", "")
-AWS_RDS_INSTANCE_ID = os.getenv("RDS_INSTANCE_ID", "rakuten-mlflow-db")
-
-
-def _alb_prefixed(path: str) -> str:
-    if AWS_ALB_URL:
-        return f"{AWS_ALB_URL.rstrip('/')}/{path.lstrip('/')}"
-    return ""
-
-
 # Service URLs (override via environment variables or Streamlit secrets for cloud mode)
 # MLFLOW_TRACKING_URI: Tracking URI for MLflow client (uses host-based routing)
 # MLFLOW_URL: Full URL for UI links (same as tracking URI)
@@ -66,6 +53,18 @@ def _get_config_value(key: str, default: str = "") -> str:
         return st.secrets.get(key, os.getenv(key, default))
     except (ImportError, AttributeError, KeyError):
         return os.getenv(key, default)
+
+# AWS / ECS defaults - use _get_config_value to read from Streamlit secrets or environment variables
+AWS_REGION = _get_config_value("AWS_REGION", "eu-west-1")
+AWS_ECS_CLUSTER = _get_config_value("AWS_ECS_CLUSTER", "rakuten-mlops-cluster")
+AWS_ALB_URL = _get_config_value("AWS_ALB_URL", "")
+AWS_RDS_INSTANCE_ID = _get_config_value("RDS_INSTANCE_ID", "rakuten-mlflow-db")
+
+
+def _alb_prefixed(path: str) -> str:
+    if AWS_ALB_URL:
+        return f"{AWS_ALB_URL.rstrip('/')}/{path.lstrip('/')}"
+    return ""
 
 MLFLOW_HOST = _get_config_value("MLFLOW_HOST", "mlflow.rakuten.dev")
 # Use ALB URL directly since hostname might not resolve, but set Host header for routing
