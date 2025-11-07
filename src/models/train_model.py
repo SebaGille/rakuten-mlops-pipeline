@@ -68,20 +68,46 @@ def _load_from_s3(s3_key: str) -> pd.DataFrame:
     s3_prefix = os.getenv("S3_DATA_PREFIX", "data/")
     
     if not s3_bucket:
+        print("S3_DATA_BUCKET not configured, skipping S3 load")
         return None
     
+    # Get AWS credentials from environment
+    aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+    aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+    aws_region = os.getenv("AWS_DEFAULT_REGION", "eu-west-1")
+    
     try:
-        s3_client = boto3.client('s3')
+        # Create S3 client with credentials if available
+        s3_client_kwargs = {'region_name': aws_region}
+        if aws_access_key and aws_secret_key:
+            s3_client_kwargs['aws_access_key_id'] = aws_access_key
+            s3_client_kwargs['aws_secret_access_key'] = aws_secret_key
+        
+        s3_client = boto3.client('s3', **s3_client_kwargs)
         full_key = f"{s3_prefix.rstrip('/')}/{s3_key.lstrip('/')}"
+        
+        print(f"Attempting to load from S3: s3://{s3_bucket}/{full_key}")
         response = s3_client.get_object(Bucket=s3_bucket, Key=full_key)
         df = pd.read_csv(io.BytesIO(response['Body'].read()))
-        print(f"Loaded {s3_key} from S3: s3://{s3_bucket}/{full_key}")
+        print(f"✓ Successfully loaded {s3_key} from S3: s3://{s3_bucket}/{full_key}")
         return df
-    except (ClientError, NoCredentialsError) as e:
-        print(f"S3 error loading {s3_key}: {e}")
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code', '')
+        if error_code == 'NoSuchKey':
+            print(f"S3 key not found: s3://{s3_bucket}/{full_key}")
+            print(f"  Please verify the file exists at this path in S3")
+        elif error_code == 'AccessDenied':
+            print(f"S3 access denied: s3://{s3_bucket}/{full_key}")
+            print(f"  Please check AWS credentials and bucket permissions")
+        else:
+            print(f"S3 error loading {s3_key}: {e}")
+        return None
+    except NoCredentialsError as e:
+        print(f"AWS credentials not found. Please configure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
         return None
     except Exception as e:
         print(f"Error loading from S3: {e}")
+        print(f"  Attempted path: s3://{s3_bucket}/{full_key}")
         return None
 
 
@@ -94,20 +120,46 @@ def _load_numpy_from_s3(s3_key: str) -> np.ndarray:
     s3_prefix = os.getenv("S3_DATA_PREFIX", "data/")
     
     if not s3_bucket:
+        print("S3_DATA_BUCKET not configured, skipping S3 load")
         return None
     
+    # Get AWS credentials from environment
+    aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+    aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+    aws_region = os.getenv("AWS_DEFAULT_REGION", "eu-west-1")
+    
     try:
-        s3_client = boto3.client('s3')
+        # Create S3 client with credentials if available
+        s3_client_kwargs = {'region_name': aws_region}
+        if aws_access_key and aws_secret_key:
+            s3_client_kwargs['aws_access_key_id'] = aws_access_key
+            s3_client_kwargs['aws_secret_access_key'] = aws_secret_key
+        
+        s3_client = boto3.client('s3', **s3_client_kwargs)
         full_key = f"{s3_prefix.rstrip('/')}/{s3_key.lstrip('/')}"
+        
+        print(f"Attempting to load from S3: s3://{s3_bucket}/{full_key}")
         response = s3_client.get_object(Bucket=s3_bucket, Key=full_key)
         array = np.load(io.BytesIO(response['Body'].read()))
-        print(f"Loaded {s3_key} from S3: s3://{s3_bucket}/{full_key}")
+        print(f"✓ Successfully loaded {s3_key} from S3: s3://{s3_bucket}/{full_key}")
         return array
-    except (ClientError, NoCredentialsError) as e:
-        print(f"S3 error loading {s3_key}: {e}")
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code', '')
+        if error_code == 'NoSuchKey':
+            print(f"S3 key not found: s3://{s3_bucket}/{full_key}")
+            print(f"  Please verify the file exists at this path in S3")
+        elif error_code == 'AccessDenied':
+            print(f"S3 access denied: s3://{s3_bucket}/{full_key}")
+            print(f"  Please check AWS credentials and bucket permissions")
+        else:
+            print(f"S3 error loading {s3_key}: {e}")
+        return None
+    except NoCredentialsError as e:
+        print(f"AWS credentials not found. Please configure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
         return None
     except Exception as e:
         print(f"Error loading from S3: {e}")
+        print(f"  Attempted path: s3://{s3_bucket}/{full_key}")
         return None
 
 
@@ -244,34 +296,54 @@ def main():
     if use_images:
         print("Loading image features...")
         # Try local file first, then S3 if available
+        image_features_full = None
         if IMAGE_FEATURES_FILE.exists():
             image_features_full = np.load(IMAGE_FEATURES_FILE)
             print(f"Loaded from local file: {IMAGE_FEATURES_FILE}")
         else:
             # Try loading from S3
             image_features_full = _load_numpy_from_s3("processed/image_features.npy")
-            if image_features_full is None:
-                raise FileNotFoundError(
-                    f"Image features not found locally at {IMAGE_FEATURES_FILE} and not available in S3. "
-                    f"Please ensure the image features file exists or configure S3_DATA_BUCKET and S3_DATA_PREFIX environment variables."
-                )
+            if image_features_full is not None:
+                print(f"Loaded from S3: processed/image_features.npy")
         
-        print(f"Image features shape: {image_features_full.shape}")
-        
-        # If we sampled the data, we need to get the corresponding image features
-        # This assumes df has an index or imageid column to match
-        if sample_size_str != "full" and 'imageid' in df.columns:
-            # Match image features by index
-            # This is a simplification - in production you'd want proper ID matching
-            print("Note: Image features might not be properly aligned after sampling!")
-            print("      Consider adding proper ID-based matching for production use.")
-        
-        # For now, just take the first N image features (aligned with CSV order)
-        image_features = image_features_full[:len(df)]
-        
-        if len(df) != len(image_features):
-            raise ValueError(f"Mismatch: {len(df)} rows in CSV but {len(image_features)} image features")
-    else:
+        # If image features are still not available, fall back to text-only mode
+        if image_features_full is None:
+            s3_bucket = os.getenv("S3_DATA_BUCKET", "")
+            s3_prefix = os.getenv("S3_DATA_PREFIX", "data/")
+            s3_path = f"{s3_prefix.rstrip('/')}/processed/image_features.npy" if s3_bucket else "N/A"
+            print("\n⚠️  WARNING: Image features not found!")
+            print(f"   Local path: {IMAGE_FEATURES_FILE}")
+            if s3_bucket:
+                print(f"   S3 path: s3://{s3_bucket}/{s3_path}")
+            else:
+                print(f"   S3: Not configured (S3_DATA_BUCKET not set)")
+            print("   Falling back to TEXT-ONLY mode.")
+            print("   To use images:")
+            print("   1. Run feature extraction: python src/features/build_features.py")
+            print("   2. Or ensure file exists in S3 at the path above")
+            print("   3. Verify S3_DATA_BUCKET, S3_DATA_PREFIX, and AWS credentials are configured\n")
+            use_images = False
+        else:
+            print(f"Image features shape: {image_features_full.shape}")
+            
+            # If we sampled the data, we need to get the corresponding image features
+            # This assumes df has an index or imageid column to match
+            if sample_size_str != "full" and 'imageid' in df.columns:
+                # Match image features by index
+                # This is a simplification - in production you'd want proper ID matching
+                print("Note: Image features might not be properly aligned after sampling!")
+                print("      Consider adding proper ID-based matching for production use.")
+            
+            # For now, just take the first N image features (aligned with CSV order)
+            image_features = image_features_full[:len(df)]
+            
+            if len(df) != len(image_features):
+                print(f"\n⚠️  WARNING: Mismatch - {len(df)} rows in CSV but {len(image_features)} image features")
+                print("   Falling back to TEXT-ONLY mode.")
+                use_images = False
+                image_features = None
+    
+    if not use_images:
         print("Training in TEXT-ONLY mode (images disabled)")
 
     # Combine text

@@ -285,16 +285,34 @@ class TrainingManager:
                 import streamlit as st
                 s3_bucket = st.secrets.get("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
                 s3_prefix = st.secrets.get("S3_DATA_PREFIX", os.getenv("S3_DATA_PREFIX", "data/"))
+                aws_access_key = st.secrets.get("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID"))
+                aws_secret_key = st.secrets.get("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY"))
+                aws_region = st.secrets.get("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
                 if s3_bucket:
                     env_vars['S3_DATA_BUCKET'] = s3_bucket
                     env_vars['S3_DATA_PREFIX'] = s3_prefix
+                if aws_access_key:
+                    env_vars['AWS_ACCESS_KEY_ID'] = aws_access_key
+                if aws_secret_key:
+                    env_vars['AWS_SECRET_ACCESS_KEY'] = aws_secret_key
+                if aws_region:
+                    env_vars['AWS_DEFAULT_REGION'] = aws_region
             except (ImportError, AttributeError):
                 s3_bucket = os.getenv("S3_DATA_BUCKET")
                 s3_prefix = os.getenv("S3_DATA_PREFIX")
+                aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+                aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+                aws_region = os.getenv("AWS_DEFAULT_REGION", "eu-west-1")
                 if s3_bucket:
                     env_vars['S3_DATA_BUCKET'] = s3_bucket
                 if s3_prefix:
                     env_vars['S3_DATA_PREFIX'] = s3_prefix
+                if aws_access_key:
+                    env_vars['AWS_ACCESS_KEY_ID'] = aws_access_key
+                if aws_secret_key:
+                    env_vars['AWS_SECRET_ACCESS_KEY'] = aws_secret_key
+                if aws_region:
+                    env_vars['AWS_DEFAULT_REGION'] = aws_region
             
             # Add hyperparameters
             if 'hyperparams' in config:
@@ -336,7 +354,17 @@ class TrainingManager:
                                 run_id = part
                                 break
                 
-                return True, "✅ Training completed successfully!", run_id
+                # Check for warnings in output (e.g., fallback to text-only mode)
+                output_lines = result.stdout.split('\n')
+                warnings = [line for line in output_lines if 'WARNING' in line or '⚠️' in line or 'falling back' in line.lower()]
+                
+                success_message = "✅ Training completed successfully!"
+                if warnings:
+                    # Include warnings in the message
+                    warning_text = '\n'.join(warnings[:3])  # Show first 3 warnings
+                    success_message += f"\n\n⚠️ Note: {warning_text}"
+                
+                return True, success_message, run_id
             else:
                 return False, f"❌ Training failed:\n{result.stderr}", None
                 
