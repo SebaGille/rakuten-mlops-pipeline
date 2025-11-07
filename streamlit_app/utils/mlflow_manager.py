@@ -275,6 +275,27 @@ class MLflowManager:
             traceback.print_exc()
             return [], error_msg
     
+    def get_model_registry_aliases_for_run(self, run_id: str) -> List[str]:
+        """Get model registry aliases for a specific run_id"""
+        try:
+            # Search all registered models
+            models = self.client.search_registered_models()
+            aliases = []
+            
+            for model in models:
+                # Search all versions of this model
+                versions = self.client.search_model_versions(f"name='{model.name}'")
+                for version in versions:
+                    if version.run_id == run_id:
+                        # Get aliases for this version
+                        if hasattr(version, 'aliases') and version.aliases:
+                            aliases.extend(version.aliases)
+            
+            return aliases if aliases else []
+        except Exception as e:
+            print(f"Error getting model registry aliases for run {run_id}: {e}")
+            return []
+    
     def get_runs(self, experiment_id: str, max_results: int = 10) -> pd.DataFrame:
         """Get runs for a specific experiment"""
         try:
@@ -286,6 +307,10 @@ class MLflowManager:
             
             data = []
             for run in runs:
+                # Get model registry aliases for this run
+                registry_aliases = self.get_model_registry_aliases_for_run(run.info.run_id)
+                registry_alias_str = ', '.join(registry_aliases) if registry_aliases else 'N/A'
+                
                 data.append({
                     'run_id': run.info.run_id,
                     'run_name': run.data.tags.get('mlflow.runName', 'N/A'),
@@ -297,7 +322,8 @@ class MLflowManager:
                     'model_type': run.data.params.get('model', 'N/A'),
                     'git_commit': run.data.tags.get('git_commit', 'N/A'),
                     'auto_promotion_candidate': run.data.tags.get('auto_promotion_candidate', 'N/A'),
-                    'auto_promotion_reason': run.data.tags.get('auto_promotion_reason', 'N/A')
+                    'auto_promotion_reason': run.data.tags.get('auto_promotion_reason', 'N/A'),
+                    'model_registry_alias': registry_alias_str
                 })
             
             return pd.DataFrame(data)
@@ -418,6 +444,10 @@ class MLflowManager:
             for run_id in run_ids:
                 run = self.client.get_run(run_id)
                 
+                # Get model registry aliases for this run
+                registry_aliases = self.get_model_registry_aliases_for_run(run_id)
+                registry_alias_str = ', '.join(registry_aliases) if registry_aliases else 'N/A'
+                
                 # Extract all relevant data
                 run_data = {
                     'run_id': run_id,  # Keep full run_id for matching
@@ -437,6 +467,7 @@ class MLflowManager:
                     'git_commit': run.data.tags.get('git_commit', 'N/A')[:7] if run.data.tags.get('git_commit', 'N/A') != 'N/A' else 'N/A',
                     'git_branch': run.data.tags.get('git_branch', 'N/A'),
                     'auto_promotion_candidate': run.data.tags.get('auto_promotion_candidate', 'N/A'),
+                    'model_registry_alias': registry_alias_str,
                     'auto_promotion_reason': run.data.tags.get('auto_promotion_reason', 'N/A'),
                     'start_time': pd.to_datetime(run.info.start_time, unit='ms').strftime('%Y-%m-%d %H:%M:%S') if run.info.start_time else 'N/A',
                     'duration_min': round((run.info.end_time - run.info.start_time) / 1000 / 60, 2) if run.info.end_time and run.info.start_time else None,

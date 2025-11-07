@@ -76,6 +76,7 @@ MLFLOW_URL = _get_config_value(
     "MLFLOW_URL",
     AWS_ALB_URL.rstrip("/") if AWS_ALB_URL else "http://localhost:5000",
 )
+API_HOST = _get_config_value("API_HOST", "api.rakuten.dev")
 API_URL = _get_config_value(
     "API_URL",
     _alb_prefixed("api") if AWS_ALB_URL else "http://localhost:8000",

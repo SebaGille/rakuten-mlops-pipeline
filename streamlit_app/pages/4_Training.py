@@ -270,7 +270,7 @@ if experiments:
             display_cols = [
                 'run_name', 'status', 'start_time', 'accuracy', 
                 'f1_weighted', 'model_type', 'auto_promotion_candidate', 
-                'auto_promotion_reason', 'git_commit'
+                'model_registry_alias', 'auto_promotion_reason', 'git_commit'
             ]
             # Only show columns that exist
             display_cols = [col for col in display_cols if col in df_display.columns]

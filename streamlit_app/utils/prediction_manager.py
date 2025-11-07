@@ -18,16 +18,30 @@ try:
 except ImportError:
     S3_AVAILABLE = False
 
+# Import API_HOST from constants to ensure it reads from Streamlit secrets
+try:
+    from streamlit_app.utils.constants import API_HOST
+except ImportError:
+    # Fallback if constants module is not available
+    API_HOST = os.getenv("API_HOST", "api.rakuten.dev")
+
 
 class PredictionManager:
     """Manage model predictions and inference logging"""
     
     def __init__(self, api_url: str, project_root: Path):
-        self.api_url = api_url
+        self.api_url = api_url.rstrip("/")
         self.project_root = project_root
         self.monitoring_dir = project_root / "data" / "monitoring"
         self.monitoring_dir.mkdir(parents=True, exist_ok=True)
         self.inference_log_path = self.monitoring_dir / "inference_log.csv"
+        
+        # Get API host for host-based routing (if using ALB)
+        # Use API_HOST from constants which reads from Streamlit secrets
+        self.api_host = API_HOST
+        
+        # Configure host-based routing for AWS ALB (similar to MLflowManager)
+        self._configure_api_host_header()
         
         # S3 Configuration (for Streamlit Cloud / AWS deployment)
         try:
@@ -61,18 +75,79 @@ class PredictionManager:
                 self.use_s3 = False
                 self.s3_client = None
     
-    def check_api_health(self) -> bool:
-        """Check if the API is accessible"""
+    def _configure_api_host_header(self):
+        """Configure API requests to use custom Host header for host-based routing"""
         try:
-            response = requests.get(f"{self.api_url}/health", timeout=5)
+            from functools import wraps
+            
+            api_url = self.api_url.rstrip("/")
+            api_host = self.api_host
+            
+            # Store original request method if not already stored
+            if not hasattr(requests.Session, '_original_request'):
+                requests.Session._original_request = requests.Session.request
+            
+            # Get the original request method (or the already-patched one)
+            original_request = requests.Session._original_request
+            
+            # Check if MLflowManager has already patched (it would have stored MLflow URL info)
+            # We need to work together with MLflowManager's patching
+            try:
+                from streamlit_app.utils.constants import MLFLOW_TRACKING_URI, MLFLOW_HOST
+                mlflow_url = MLFLOW_TRACKING_URI.rstrip("/") if MLFLOW_TRACKING_URI else None
+                mlflow_host = MLFLOW_HOST
+            except:
+                mlflow_url = None
+                mlflow_host = None
+            
+            @wraps(original_request)
+            def request_with_host_header(session_self, method, url, *args, **kwargs):
+                # Ensure headers dict exists
+                if 'headers' not in kwargs:
+                    kwargs['headers'] = {}
+                
+                url_normalized = url.rstrip("/")
+                
+                # Check for API URL first
+                if api_url and (url_normalized.startswith(api_url) or url.startswith(api_url)):
+                    kwargs['headers']['Host'] = api_host
+                # Check for MLflow URL (if MLflowManager hasn't already handled it)
+                elif mlflow_url and (url_normalized.startswith(mlflow_url) or url.startswith(mlflow_url)):
+                    if 'Host' not in kwargs['headers']:  # Only set if not already set
+                        kwargs['headers']['Host'] = mlflow_host
+                
+                return original_request(session_self, method, url, *args, **kwargs)
+            
+            # Only patch if not already patched (or re-patch to include API support)
+            requests.Session.request = request_with_host_header
+            print(f"[PredictionManager] Configured host-based routing: {api_url} -> Host: {api_host}")
+        except Exception as e:
+            print(f"[PredictionManager] Warning: Failed to configure Host header: {e}")
+    
+    def _get_headers(self) -> Dict[str, str]:
+        """Get headers for API requests with host-based routing"""
+        headers = {}
+        if self.api_host and (self.api_url.startswith("http://") or self.api_url.startswith("https://")):
+            headers['Host'] = self.api_host
+        return headers
+    
+    def check_api_health(self) -> bool:
+        """Check if the API is accessible with host-based routing support"""
+        try:
+            # Ensure host header is configured
+            self._configure_api_host_header()
+            
+            headers = self._get_headers()
+            response = requests.get(f"{self.api_url}/health", timeout=5, headers=headers)
             return response.status_code == 200
-        except Exception:
+        except Exception as e:
+            print(f"[PredictionManager] API health check failed: {e}")
             return False
     
     def predict(self, designation: str, description: str, 
                 image: Optional[bytes] = None) -> Optional[Dict]:
         """
-        Make a prediction using the API
+        Make a prediction using the API with host-based routing support
         
         Args:
             designation: Product designation/title
@@ -83,16 +158,21 @@ class PredictionManager:
             dict: Prediction results or None if failed
         """
         try:
+            # Ensure host header is configured
+            self._configure_api_host_header()
+            
             # For now, only text-based prediction (API doesn't support images yet)
             payload = {
                 "designation": designation,
                 "description": description
             }
             
+            headers = self._get_headers()
             response = requests.post(
                 f"{self.api_url}/predict",
                 json=payload,
-                timeout=30
+                timeout=30,
+                headers=headers
             )
             
             if response.status_code == 200:
