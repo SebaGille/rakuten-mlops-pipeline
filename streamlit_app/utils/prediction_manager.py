@@ -56,14 +56,15 @@ class PredictionManager:
         
         # S3 Configuration (for Streamlit Cloud / AWS deployment)
         try:
-            import streamlit as st
-            self.s3_bucket = st.secrets.get("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
-            self.s3_prefix = st.secrets.get("S3_DATA_PREFIX", os.getenv("S3_DATA_PREFIX", "data/"))
-            aws_access_key = st.secrets.get("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID"))
-            aws_secret_key = st.secrets.get("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY"))
-            aws_region = st.secrets.get("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
-        except (ImportError, AttributeError, KeyError, FileNotFoundError):
-            # FileNotFoundError occurs when secrets.toml doesn't exist (localhost)
+            from streamlit_app.utils.constants import _safe_get_secret
+            # Use safe secret access to avoid warnings
+            self.s3_bucket = _safe_get_secret("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
+            self.s3_prefix = _safe_get_secret("S3_DATA_PREFIX", os.getenv("S3_DATA_PREFIX", "data/"))
+            aws_access_key = _safe_get_secret("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID", ""))
+            aws_secret_key = _safe_get_secret("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY", ""))
+            aws_region = _safe_get_secret("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
+        except Exception:
+            # Fallback to environment variables if anything fails
             self.s3_bucket = os.getenv("S3_DATA_BUCKET", "")
             self.s3_prefix = os.getenv("S3_DATA_PREFIX", "data/")
             aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
@@ -88,8 +89,13 @@ class PredictionManager:
                 self.s3_client = None
     
     def _configure_api_host_header(self):
-        """Configure API requests to use custom Host header for host-based routing"""
+        """Configure API requests to use custom Host header for host-based routing (only for cloud/AWS)"""
         try:
+            # Skip host-based routing for localhost deployments
+            if self.api_url.startswith("http://localhost") or self.api_url.startswith("http://127.0.0.1"):
+                logger.debug(f"Skipping host-based routing for localhost: {self.api_url}")
+                return
+            
             from functools import wraps
             
             api_url = self.api_url.rstrip("/")
@@ -137,10 +143,12 @@ class PredictionManager:
             logger.warning(f"Failed to configure Host header: {e}", exc_info=True)
     
     def _get_headers(self) -> Dict[str, str]:
-        """Get headers for API requests with host-based routing"""
+        """Get headers for API requests with host-based routing (only for cloud/AWS)"""
         headers = {}
-        if self.api_host and (self.api_url.startswith("http://") or self.api_url.startswith("https://")):
-            headers['Host'] = self.api_host
+        # Skip host-based routing for localhost deployments
+        if not (self.api_url.startswith("http://localhost") or self.api_url.startswith("http://127.0.0.1")):
+            if self.api_host and (self.api_url.startswith("http://") or self.api_url.startswith("https://")):
+                headers['Host'] = self.api_host
         return headers
     
     def check_api_health(self) -> Tuple[bool, Optional[str]]:

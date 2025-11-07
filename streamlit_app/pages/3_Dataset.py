@@ -92,7 +92,7 @@ if stats:
     )
     
     # Load button
-    if st.button("Load 10 Samples", width='stretch'):
+    if st.button("Load 10 Samples"):
         with st.spinner("Loading dataset sample..."):
             df_sample = training_manager.load_dataset_sample(
                 sample_size=10,

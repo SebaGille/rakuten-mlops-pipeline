@@ -24,16 +24,15 @@ class TrainingManager:
         # S3 Configuration (for Streamlit Cloud / AWS deployment)
         # Try Streamlit secrets first (for Streamlit Cloud), then environment variables
         try:
-            import streamlit as st
-            # Streamlit secrets are available when running in Streamlit
-            self.s3_bucket = st.secrets.get("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
-            self.s3_prefix = st.secrets.get("S3_DATA_PREFIX", os.getenv("S3_DATA_PREFIX", "data/"))
-            aws_access_key = st.secrets.get("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID"))
-            aws_secret_key = st.secrets.get("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY"))
-            aws_region = st.secrets.get("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
-        except (ImportError, AttributeError, KeyError, FileNotFoundError):
-            # FileNotFoundError occurs when secrets.toml doesn't exist (localhost)
-            # Fallback to environment variables if Streamlit is not available
+            from streamlit_app.utils.constants import _safe_get_secret
+            # Use safe secret access to avoid warnings
+            self.s3_bucket = _safe_get_secret("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
+            self.s3_prefix = _safe_get_secret("S3_DATA_PREFIX", os.getenv("S3_DATA_PREFIX", "data/"))
+            aws_access_key = _safe_get_secret("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID", ""))
+            aws_secret_key = _safe_get_secret("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY", ""))
+            aws_region = _safe_get_secret("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
+        except Exception:
+            # Fallback to environment variables if anything fails
             self.s3_bucket = os.getenv("S3_DATA_BUCKET", "")
             self.s3_prefix = os.getenv("S3_DATA_PREFIX", "data/")
             aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
@@ -283,12 +282,12 @@ class TrainingManager:
             
             # Add S3 configuration if available
             try:
-                import streamlit as st
-                s3_bucket = st.secrets.get("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
-                s3_prefix = st.secrets.get("S3_DATA_PREFIX", os.getenv("S3_DATA_PREFIX", "data/"))
-                aws_access_key = st.secrets.get("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID"))
-                aws_secret_key = st.secrets.get("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY"))
-                aws_region = st.secrets.get("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
+                from streamlit_app.utils.constants import _safe_get_secret
+                s3_bucket = _safe_get_secret("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
+                s3_prefix = _safe_get_secret("S3_DATA_PREFIX", os.getenv("S3_DATA_PREFIX", "data/"))
+                aws_access_key = _safe_get_secret("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID", ""))
+                aws_secret_key = _safe_get_secret("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY", ""))
+                aws_region = _safe_get_secret("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
                 if s3_bucket:
                     env_vars['S3_DATA_BUCKET'] = s3_bucket
                     env_vars['S3_DATA_PREFIX'] = s3_prefix

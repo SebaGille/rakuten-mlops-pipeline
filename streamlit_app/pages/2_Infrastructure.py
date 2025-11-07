@@ -1,4 +1,4 @@
-"""Infrastructure Management Page - control AWS ECS services."""
+"""Infrastructure Management Page - control AWS ECS services or local Docker services."""
 
 import sys
 import time
@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from streamlit_app.utils.ecs_manager import ECSManager
+from streamlit_app.utils.docker_manager import LocalDockerManager
 from streamlit_app.utils.constants import (
     MLFLOW_URL,
     API_URL,
@@ -18,6 +19,7 @@ from streamlit_app.utils.constants import (
     AWS_ECS_CLUSTER,
     AWS_ALB_URL,
     AWS_RDS_INSTANCE_ID,
+    CONTAINERS,
 )
 
 st.set_page_config(
@@ -27,9 +29,24 @@ st.set_page_config(
 )
 
 
+def _is_cloud_deployment() -> bool:
+    """Detect if running in cloud (AWS) or localhost mode."""
+    # Check if AWS_ALB_URL is set (indicates cloud deployment)
+    if AWS_ALB_URL:
+        return True
+    # Check if secrets are available (indicates cloud deployment)
+    from streamlit_app.utils.constants import _has_secrets_file, _safe_get_secret
+    if _has_secrets_file():
+        # If secrets file exists, check if AWS_ALB_URL is in it
+        alb_url = _safe_get_secret("AWS_ALB_URL", "")
+        if alb_url:
+            return True
+    return False
+
+
 @st.cache_resource
 def get_aws_manager() -> ECSManager:
-    """Cache the ECS manager across reruns."""
+    """Cache the ECS manager across reruns (only used in cloud mode)."""
 
     return ECSManager(
         region=AWS_REGION,
@@ -38,26 +55,43 @@ def get_aws_manager() -> ECSManager:
     )
 
 
-ecs_manager = get_aws_manager()
+@st.cache_resource
+def get_docker_manager() -> LocalDockerManager:
+    """Cache the Docker manager across reruns (only used in localhost mode)."""
+    return LocalDockerManager(str(PROJECT_ROOT))
+
+
+# Detect deployment mode
+is_cloud = _is_cloud_deployment()
 
 st.title("Infrastructure Management")
-st.markdown(
-    """
-    Keep an eye on the managed AWS deployment powering the Rakuten MLOps pipeline: an
-    Application Load Balancer fronts two ECS Fargate services (`rakuten-api`, `rakuten-mlflow`),
-    backed by Amazon RDS, S3 artifacts, Secrets Manager, and CloudWatch logging.
 
-    Prefer to explore locally? Clone the repository and start the five-container stack with
-    `docker-compose` (PostgreSQL, MLflow, FastAPI, Prometheus, Grafana) to mirror this control
-    plane on your laptop.
-    """
-)
-
-if AWS_ALB_URL:
-    st.info(f"🔗 Application Load Balancer endpoint: {AWS_ALB_URL}")
-
-services_status = ecs_manager.get_all_services_status()
-rds_status = ecs_manager.get_rds_status()
+if is_cloud:
+    st.markdown(
+        """
+        Keep an eye on the managed AWS deployment powering the Rakuten MLOps pipeline: an
+        Application Load Balancer fronts two ECS Fargate services (`rakuten-api`, `rakuten-mlflow`),
+        backed by Amazon RDS, S3 artifacts, Secrets Manager, and CloudWatch logging.
+        """
+    )
+    if AWS_ALB_URL:
+        st.info(f"🔗 Application Load Balancer endpoint: {AWS_ALB_URL}")
+    
+    ecs_manager = get_aws_manager()
+    services_status = ecs_manager.get_all_services_status()
+    rds_status = ecs_manager.get_rds_status()
+else:
+    st.markdown(
+        """
+        Monitor your local Docker Compose stack: PostgreSQL, MLflow, FastAPI, Prometheus, and Grafana
+        containers running on `localhost`. This mirrors the production AWS stack for local development.
+        """
+    )
+    docker_manager = get_docker_manager()
+    # Get Docker services status
+    docker_services_status = docker_manager.get_all_services_status(CONTAINERS)
+    services_status = {}
+    rds_status = None  # No RDS in localhost mode
 
 
 def render_status_indicator(health: str) -> str:
@@ -78,34 +112,82 @@ st.markdown("### Service Status Overview")
 
 service_cards = []
 
-for key, info in (services_status or {}).items():
-    running = info.get("runningCount", 0)
-    desired = info.get("desired", 0)
-    lines = [
-        f"Desired: {desired} | Running: {running}",
-    ]
-    if info.get("serviceArn"):
-        lines.append(f"Service ARN: {info['serviceArn'].split('/')[-1]}")
+if is_cloud:
+    # AWS ECS services
+    for key, info in (services_status or {}).items():
+        running = info.get("runningCount", 0)
+        desired = info.get("desired", 0)
+        lines = [
+            f"Desired: {desired} | Running: {running}",
+        ]
+        if info.get("serviceArn"):
+            lines.append(f"Service ARN: {info['serviceArn'].split('/')[-1]}")
 
-    links = []
-    if info.get("url"):
-        links.append(("Open service", info["url"]))
-    if key == "api" and API_URL:
-        links.append(("API docs", f"{API_URL}/docs"))
-    if key == "mlflow" and MLFLOW_URL:
-        links.append(("MLflow UI", MLFLOW_URL))
+        links = []
+        if info.get("url"):
+            links.append(("Open service", info["url"]))
+        if key == "api" and API_URL:
+            links.append(("API docs", f"{API_URL}/docs"))
+        if key == "mlflow" and MLFLOW_URL:
+            links.append(("MLflow UI", MLFLOW_URL))
 
-    service_cards.append(
-        {
-            "title": info.get("displayName", key.title()),
-            "status": render_status_indicator(info.get("health")),
-            "lines": lines,
-            "links": links,
-            "footnote": info.get("lastEvent"),
-        }
-    )
+        service_cards.append(
+            {
+                "title": info.get("displayName", key.title()),
+                "status": render_status_indicator(info.get("health")),
+                "lines": lines,
+                "links": links,
+                "footnote": info.get("lastEvent"),
+            }
+        )
+else:
+    # Docker services
+    docker_service_names = {
+        "postgres": "PostgreSQL",
+        "mlflow": "MLflow Server",
+        "api": "Rakuten API",
+        "prometheus": "Prometheus",
+        "grafana": "Grafana"
+    }
+    
+    docker_urls = {
+        "postgres": None,
+        "mlflow": "http://localhost:5000",
+        "api": "http://localhost:8000",
+        "prometheus": "http://localhost:9090",
+        "grafana": "http://localhost:3000"
+    }
+    
+    for key, info in (docker_services_status or {}).items():
+        running = 1 if info.get("running", False) else 0
+        status = info.get("status", "unknown")
+        health = info.get("health", "unknown")
+        
+        lines = [
+            f"Status: {status}",
+        ]
+        if health != "unknown":
+            lines.append(f"Health: {health}")
+        
+        links = []
+        if docker_urls.get(key):
+            links.append(("Open service", docker_urls[key]))
+        if key == "api" and docker_urls.get("api"):
+            links.append(("API docs", f"{docker_urls['api']}/docs"))
+        if key == "mlflow" and docker_urls.get("mlflow"):
+            links.append(("MLflow UI", docker_urls["mlflow"]))
+        
+        service_cards.append(
+            {
+                "title": docker_service_names.get(key, key.title()),
+                "status": render_status_indicator(health if health != "unknown" else ("healthy" if running else "stopped")),
+                "lines": lines,
+                "links": links,
+                "footnote": None,
+            }
+        )
 
-if rds_status:
+if is_cloud and rds_status:
     rds_raw_status = (rds_status.get("status") or "").lower()
     if rds_raw_status in {"available", "storage-optimization"}:
         rds_health = "healthy"
@@ -187,23 +269,57 @@ st.markdown("---")
 
 st.markdown("### Control Panel")
 
-control_all_start, control_all_stop = st.columns(2)
-
-with control_all_start:
-    if st.button("Start all services", type="primary", width='stretch'):
-        with st.spinner("Scaling services to 1 instance..."):
-            ecs_manager.scale_all(1)
-            time.sleep(1)
-        st.success("Scale request submitted.")
-        st.rerun()
-
-with control_all_stop:
-    if st.button("Stop all services", width='stretch'):
-        with st.spinner("Stopping all services..."):
-            ecs_manager.scale_all(0)
-            time.sleep(1)
-        st.success("Scale request submitted.")
-        st.rerun()
+if is_cloud:
+    # AWS ECS control panel
+    control_all_start, control_all_stop = st.columns(2)
+    
+    with control_all_start:
+        if st.button("Start all services", type="primary"):
+            with st.spinner("Scaling services to 1 instance..."):
+                ecs_manager.scale_all(1)
+                time.sleep(1)
+            st.success("Scale request submitted.")
+            st.rerun()
+    
+    with control_all_stop:
+        if st.button("Stop all services"):
+            with st.spinner("Stopping all services..."):
+                ecs_manager.scale_all(0)
+                time.sleep(1)
+            st.success("Scale request submitted.")
+            st.rerun()
+else:
+    # Docker control panel
+    control_all_start, control_all_stop = st.columns(2)
+    
+    with control_all_start:
+        if st.button("Start all services", type="primary"):
+            with st.spinner("Starting Docker services..."):
+                from streamlit_app.utils.constants import COMPOSE_FILES
+                compose_files = list(COMPOSE_FILES.values())
+                success, message = docker_manager.start_services(compose_files[0])  # Start MLflow first
+                if success and len(compose_files) > 1:
+                    for compose_file in compose_files[1:]:
+                        docker_manager.start_services(compose_file)
+                time.sleep(1)
+            if success:
+                st.success("✅ Docker services started successfully.")
+            else:
+                st.error(f"❌ {message}")
+            st.rerun()
+    
+    with control_all_stop:
+        if st.button("Stop all services"):
+            with st.spinner("Stopping Docker services..."):
+                from streamlit_app.utils.constants import COMPOSE_FILES
+                compose_files = list(COMPOSE_FILES.values())
+                success, message = docker_manager.stop_all_services(compose_files)
+                time.sleep(1)
+            if success:
+                st.success("✅ Docker services stopped successfully.")
+            else:
+                st.error(f"❌ {message}")
+            st.rerun()
 
 st.markdown("---")
 

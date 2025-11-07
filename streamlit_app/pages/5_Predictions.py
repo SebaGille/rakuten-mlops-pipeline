@@ -33,7 +33,14 @@ st.markdown("Make real-time product category predictions using the deployed mode
 st.markdown("---")
 
 # Check API health
-api_healthy, error_msg = prediction_manager.check_api_health()
+health_result = prediction_manager.check_api_health()
+# Ensure we always get a tuple (defensive check for compatibility)
+if isinstance(health_result, tuple) and len(health_result) == 2:
+    api_healthy, error_msg = health_result
+else:
+    # Fallback: if function returns something unexpected, treat as unhealthy
+    api_healthy = False
+    error_msg = "API health check returned unexpected result"
 if not api_healthy:
     st.error("⚠️ Prediction API is not accessible")
     st.info(f"**Expected API at:** `{API_URL}`")
@@ -147,7 +154,7 @@ with col1:
     st.markdown("---")
     
     # Prediction button
-    predict_button = st.button("PREDICT CATEGORY", type="primary", width='stretch')
+    predict_button = st.button("PREDICT CATEGORY", type="primary")
 
 with col2:
     st.markdown("### Prediction Results")

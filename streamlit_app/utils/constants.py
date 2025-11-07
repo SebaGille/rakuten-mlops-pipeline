@@ -1,13 +1,63 @@
 """Constants and configuration for Streamlit application."""
 
 import os
+import logging
 from pathlib import Path
+from contextlib import contextmanager
 
 # Project paths
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_RAW = PROJECT_ROOT / "data" / "raw"
 DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
 MODELS_DIR = PROJECT_ROOT / "models"
+
+# Suppress Streamlit secrets warnings
+@contextmanager
+def _suppress_streamlit_warnings():
+    """Context manager to suppress Streamlit secrets warnings"""
+    import warnings
+    import logging
+    
+    # Temporarily suppress Streamlit's logger warnings
+    streamlit_logger = logging.getLogger("streamlit")
+    original_level = streamlit_logger.level
+    streamlit_logger.setLevel(logging.ERROR)
+    
+    # Also suppress Python warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            yield
+        finally:
+            streamlit_logger.setLevel(original_level)
+
+
+def _has_secrets_file() -> bool:
+    """Check if secrets file exists without triggering Streamlit warnings"""
+    secrets_paths = [
+        Path.home() / ".streamlit" / "secrets.toml",
+        PROJECT_ROOT / "streamlit_app" / ".streamlit" / "secrets.toml",
+    ]
+    return any(path.exists() for path in secrets_paths)
+
+
+def _safe_get_secret(key: str, default: str = "") -> str:
+    """Safely get a secret value without triggering Streamlit warnings"""
+    # Check if secrets file exists first
+    if not _has_secrets_file():
+        return os.getenv(key, default)
+    
+    # If secrets file exists, try to access it with warning suppression
+    try:
+        import streamlit as st
+        with _suppress_streamlit_warnings():
+            value = st.secrets.get(key, os.getenv(key, default))
+            return value if isinstance(value, str) else default
+    except (ImportError, AttributeError, KeyError, FileNotFoundError):
+        return os.getenv(key, default)
+    except Exception:
+        # Any other exception, fall back to environment variable
+        return os.getenv(key, default)
 
 # Product categories mapping
 PRODUCT_CATEGORIES = {
@@ -48,12 +98,7 @@ PRODUCT_CATEGORIES = {
 
 def _get_config_value(key: str, default: str = "") -> str:
     """Get configuration value from Streamlit secrets or environment variables"""
-    try:
-        import streamlit as st
-        return st.secrets.get(key, os.getenv(key, default))
-    except (ImportError, AttributeError, KeyError, FileNotFoundError):
-        # FileNotFoundError occurs when secrets.toml doesn't exist
-        return os.getenv(key, default)
+    return _safe_get_secret(key, default)
 
 # AWS / ECS defaults - use _get_config_value to read from Streamlit secrets or environment variables
 AWS_REGION = _get_config_value("AWS_REGION", "eu-west-1")

@@ -111,14 +111,8 @@ st.markdown("""
 # Helpers
 def _get_secret_value(key: str) -> str:
     """Safely retrieve a secret value if available."""
-
-    try:
-        value = st.secrets.get(key)  # type: ignore[attr-defined]
-        if isinstance(value, str):
-            return value
-    except Exception:  # pragma: no cover - secrets unavailable locally
-        pass
-    return ""
+    from streamlit_app.utils.constants import _safe_get_secret
+    return _safe_get_secret(key, "")
 
 
 def _detect_deployment_mode() -> str:

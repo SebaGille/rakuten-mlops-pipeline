@@ -33,13 +33,14 @@ def _get_s3_client():
         return None
     
     try:
-        import streamlit as st
-        s3_bucket = st.secrets.get("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
-        aws_access_key = st.secrets.get("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID"))
-        aws_secret_key = st.secrets.get("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY"))
-        aws_region = st.secrets.get("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
-    except (ImportError, AttributeError, KeyError, FileNotFoundError):
-        # FileNotFoundError occurs when secrets.toml doesn't exist (localhost)
+        from streamlit_app.utils.constants import _safe_get_secret
+        # Use safe secret access to avoid warnings
+        s3_bucket = _safe_get_secret("S3_DATA_BUCKET", os.getenv("S3_DATA_BUCKET", ""))
+        aws_access_key = _safe_get_secret("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID", ""))
+        aws_secret_key = _safe_get_secret("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY", ""))
+        aws_region = _safe_get_secret("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
+    except Exception:
+        # Fallback to environment variables if anything fails
         s3_bucket = os.getenv("S3_DATA_BUCKET", "")
         aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
         aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
