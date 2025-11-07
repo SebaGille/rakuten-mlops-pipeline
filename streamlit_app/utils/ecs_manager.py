@@ -38,12 +38,13 @@ class ECSManager:
         self.rds_instance_id = rds_instance_id
 
         alb_url = os.getenv("AWS_ALB_URL", "").rstrip("/")
+        # Use ALB URL directly - ALB routes based on Host header, not path prefix
         default_api_url = os.getenv("API_URL")
         if not default_api_url and alb_url:
-            default_api_url = f"{alb_url}/api"
+            default_api_url = alb_url  # No /api prefix - routing is via Host header
         default_mlflow_url = os.getenv("MLFLOW_URL")
         if not default_mlflow_url and alb_url:
-            default_mlflow_url = f"{alb_url}/mlflow"
+            default_mlflow_url = alb_url  # No /mlflow prefix - routing is via Host header
 
         self.services = services or {
             "api": {

@@ -51,7 +51,8 @@ def _get_config_value(key: str, default: str = "") -> str:
     try:
         import streamlit as st
         return st.secrets.get(key, os.getenv(key, default))
-    except (ImportError, AttributeError, KeyError):
+    except (ImportError, AttributeError, KeyError, FileNotFoundError):
+        # FileNotFoundError occurs when secrets.toml doesn't exist
         return os.getenv(key, default)
 
 # AWS / ECS defaults - use _get_config_value to read from Streamlit secrets or environment variables
@@ -77,9 +78,11 @@ MLFLOW_URL = _get_config_value(
     AWS_ALB_URL.rstrip("/") if AWS_ALB_URL else "http://localhost:5000",
 )
 API_HOST = _get_config_value("API_HOST", "api.rakuten.dev")
+# Use ALB URL directly since hostname might not resolve, but set Host header for routing
+# The ALB routes based on Host header (api.rakuten.dev), not path prefix
 API_URL = _get_config_value(
     "API_URL",
-    _alb_prefixed("api") if AWS_ALB_URL else "http://localhost:8000",
+    AWS_ALB_URL.rstrip("/") if AWS_ALB_URL else "http://localhost:8000",
 )
 PROMETHEUS_URL = _get_config_value("PROMETHEUS_URL", "")
 GRAFANA_URL = _get_config_value("GRAFANA_URL", "")

@@ -31,7 +31,8 @@ class TrainingManager:
             aws_access_key = st.secrets.get("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID"))
             aws_secret_key = st.secrets.get("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY"))
             aws_region = st.secrets.get("AWS_DEFAULT_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-west-1"))
-        except (ImportError, AttributeError, KeyError):
+        except (ImportError, AttributeError, KeyError, FileNotFoundError):
+            # FileNotFoundError occurs when secrets.toml doesn't exist (localhost)
             # Fallback to environment variables if Streamlit is not available
             self.s3_bucket = os.getenv("S3_DATA_BUCKET", "")
             self.s3_prefix = os.getenv("S3_DATA_PREFIX", "data/")
@@ -297,7 +298,8 @@ class TrainingManager:
                     env_vars['AWS_SECRET_ACCESS_KEY'] = aws_secret_key
                 if aws_region:
                     env_vars['AWS_DEFAULT_REGION'] = aws_region
-            except (ImportError, AttributeError):
+            except (ImportError, AttributeError, FileNotFoundError):
+                # FileNotFoundError occurs when secrets.toml doesn't exist (localhost)
                 s3_bucket = os.getenv("S3_DATA_BUCKET")
                 s3_prefix = os.getenv("S3_DATA_PREFIX")
                 aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
