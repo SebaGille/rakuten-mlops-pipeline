@@ -137,7 +137,7 @@ if stats:
                                 if image_data:
                                     # Convert bytes to image
                                     img = Image.open(io.BytesIO(image_data))
-                                    st.image(img, use_column_width=True)
+                                    st.image(img, width='stretch')
                                 else:
                                     st.info("📷 Image not found")
                             else:

@@ -304,7 +304,7 @@ if experiments:
             
             st.dataframe(
                 df_display[display_cols],
-                use_container_width=True
+                width='stretch'
             )
             
             st.markdown("---")
@@ -344,7 +344,7 @@ if experiments:
                     
                     st.dataframe(
                         df_champion_display[display_cols],
-                        use_container_width=True
+                        width='stretch'
                     )
                 else:
                     st.warning("Champion run not found in the current runs list. It may be older than the displayed runs.")
@@ -510,7 +510,7 @@ if models:
                             {'Parameter': k, 'Value': v} 
                             for k, v in params.items()
                         ])
-                        st.dataframe(params_df, use_container_width=True, hide_index=True)
+                        st.dataframe(params_df, width='stretch', hide_index=True)
                     else:
                         st.info("No parameters logged")
                     
@@ -525,7 +525,7 @@ if models:
                                 {'Tag': k, 'Value': v} 
                                 for k, v in display_tags.items()
                             ])
-                            st.dataframe(tags_df, use_container_width=True, hide_index=True)
+                            st.dataframe(tags_df, width='stretch', hide_index=True)
                         else:
                             st.info("No custom tags")
                     else:
@@ -575,7 +575,7 @@ if models:
                             {'Parameter': k, 'Value': v} 
                             for k, v in params.items()
                         ])
-                        st.dataframe(params_df, use_container_width=True, hide_index=True)
+                        st.dataframe(params_df, width='stretch', hide_index=True)
                     
                     # Comparison with champion
                     if champion_details and challenger_details:
@@ -598,7 +598,7 @@ if models:
                         df_comp['Difference'] = df_comp['Challenger'] - df_comp['Champion']
                         df_comp['% Change'] = ((df_comp['Challenger'] - df_comp['Champion']) / df_comp['Champion'] * 100).round(2)
                         
-                        st.dataframe(df_comp, use_container_width=True, hide_index=True)
+                        st.dataframe(df_comp, width='stretch', hide_index=True)
                         
                         # Recommendation
                         f1_diff = df_comp[df_comp['Metric'] == 'F1-Weighted']['Difference'].values[0]

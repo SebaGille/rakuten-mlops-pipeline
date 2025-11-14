@@ -93,7 +93,7 @@ with col1:
     if uploaded_image:
         # Display uploaded image
         image = Image.open(uploaded_image)
-        st.image(image, caption="Uploaded Image", use_column_width=True)
+        st.image(image, caption="Uploaded Image", width='stretch')
         
         # Validate image
         image_bytes = uploaded_image.getvalue()

@@ -8,6 +8,16 @@ from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 from tensorflow.keras.preprocessing import image
 import joblib
+import os
+import io
+
+# Optional S3 support
+try:
+    import boto3
+    from botocore.exceptions import ClientError, NoCredentialsError
+    S3_AVAILABLE = True
+except ImportError:
+    S3_AVAILABLE = False
 
 # --- Paths ---
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -110,6 +120,62 @@ def build_features(df):
     ]]
     return features
 
+def _upload_numpy_to_s3(array: np.ndarray, s3_key: str) -> bool:
+    """Upload a numpy array to S3 if configured"""
+    if not S3_AVAILABLE:
+        return False
+    
+    s3_bucket = os.getenv("S3_DATA_BUCKET", "")
+    s3_prefix = os.getenv("S3_DATA_PREFIX", "data/")
+    
+    if not s3_bucket:
+        print("S3_DATA_BUCKET not configured, skipping S3 upload")
+        return False
+    
+    # Get AWS credentials from environment
+    aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+    aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+    aws_region = os.getenv("AWS_DEFAULT_REGION", "eu-west-1")
+    
+    try:
+        # Create S3 client with credentials if available
+        s3_client_kwargs = {'region_name': aws_region}
+        if aws_access_key and aws_secret_key:
+            s3_client_kwargs['aws_access_key_id'] = aws_access_key
+            s3_client_kwargs['aws_secret_access_key'] = aws_secret_key
+        
+        s3_client = boto3.client('s3', **s3_client_kwargs)
+        full_key = f"{s3_prefix.rstrip('/')}/{s3_key.lstrip('/')}"
+        
+        # Save numpy array to bytes
+        buffer = io.BytesIO()
+        np.save(buffer, array)
+        buffer.seek(0)
+        
+        print(f"Uploading to S3: s3://{s3_bucket}/{full_key}")
+        s3_client.put_object(
+            Bucket=s3_bucket,
+            Key=full_key,
+            Body=buffer.getvalue()
+        )
+        print(f"✓ Successfully uploaded {s3_key} to S3: s3://{s3_bucket}/{full_key}")
+        return True
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code', '')
+        if error_code == 'AccessDenied':
+            print(f"S3 access denied: s3://{s3_bucket}/{full_key}")
+            print(f"  Please check AWS credentials and bucket permissions")
+        else:
+            print(f"S3 error uploading {s3_key}: {e}")
+        return False
+    except NoCredentialsError as e:
+        print(f"AWS credentials not found. Please configure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
+        return False
+    except Exception as e:
+        print(f"Error uploading to S3: {e}")
+        print(f"  Attempted path: s3://{s3_bucket}/{full_key}")
+        return False
+
 def main():
     print("Loading merged dataset...")
     df = pd.read_csv(INPUT_FILE)
@@ -130,9 +196,17 @@ def main():
     processed.to_csv(OUTPUT_FILE, index=False)
     print(f"Saved text features → {OUTPUT_FILE}")
     
-    # Save image features as numpy array
+    # Save image features as numpy array locally
     np.save(IMAGE_FEATURES_FILE, image_features)
     print(f"Saved image features → {IMAGE_FEATURES_FILE}")
+    
+    # Upload to S3 if configured
+    print("\n=== Uploading to S3 (if configured) ===")
+    s3_uploaded = _upload_numpy_to_s3(image_features, "processed/image_features.npy")
+    if not s3_uploaded:
+        print("S3 upload skipped or failed. File saved locally only.")
+        print("To upload manually: aws s3 cp data/processed/image_features.npy s3://<bucket>/data/processed/")
+    
     print(f"\n✓ Feature extraction completed successfully!")
 
 if __name__ == "__main__":

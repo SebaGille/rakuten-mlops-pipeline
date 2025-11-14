@@ -285,7 +285,7 @@ def main():
 
     if is_cloud and cloud_image_path.exists():
         st.markdown("### AWS Cloud Architecture Diagram")
-        st.image(str(cloud_image_path), use_column_width=True, caption="Cloud-native deployment at a glance")
+        st.image(str(cloud_image_path), width='stretch', caption="Cloud-native deployment at a glance")
 
     st.markdown("### Architecture Overview")
 
